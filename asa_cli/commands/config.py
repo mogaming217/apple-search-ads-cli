@@ -140,7 +140,7 @@ def test_connection():
         client = SearchAdsClient(credentials)
 
         with console.status("[bold blue]Connecting to Apple Search Ads API..."):
-            campaigns = client.get_campaigns(limit=1)
+            campaigns = client.get_campaigns()
 
         console.print("[green]✓ Connection successful![/green]")
         console.print(f"  Organization ID: {credentials.org_id}")
@@ -162,4 +162,3 @@ def test_connection():
         console.print("  2. Ensure private key file exists and is readable")
         console.print("  3. Check that your API user has appropriate permissions")
         raise typer.Exit(1)
-

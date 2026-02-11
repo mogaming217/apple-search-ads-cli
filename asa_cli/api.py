@@ -404,11 +404,19 @@ class SearchAdsClient:
                 f"/campaigns/{campaign_id}/adgroups/{ad_group_id}/targetingkeywords/bulk",
                 data=keyword_objects,
             )
-            added = response.get("data", []) if isinstance(response, dict) else []
-            errors = []
-            if isinstance(response, dict) and "error" in response:
-                error_obj = response.get("error", {})
-                errors = error_obj.get("errors", [])
+            added: list[dict[str, Any]] = []
+            errors: list[dict[str, Any]] = []
+
+            if isinstance(response, dict):
+                data_obj = response.get("data")
+                if isinstance(data_obj, list):
+                    added = data_obj
+
+                error_obj = response.get("error")
+                if isinstance(error_obj, dict):
+                    errors_obj = error_obj.get("errors")
+                    if isinstance(errors_obj, list):
+                        errors = errors_obj
             return added, errors
         except Exception as e:
             console.print(f"[red]Error adding keywords: {e}[/red]")
@@ -445,11 +453,19 @@ class SearchAdsClient:
                 f"/campaigns/{campaign_id}/negativekeywords/bulk",
                 data=keyword_objects,
             )
-            added = response.get("data", []) if isinstance(response, dict) else []
-            errors = []
-            if isinstance(response, dict) and "error" in response:
-                error_obj = response.get("error", {})
-                errors = error_obj.get("errors", [])
+            added: list[dict[str, Any]] = []
+            errors: list[dict[str, Any]] = []
+
+            if isinstance(response, dict):
+                data_obj = response.get("data")
+                if isinstance(data_obj, list):
+                    added = data_obj
+
+                error_obj = response.get("error")
+                if isinstance(error_obj, dict):
+                    errors_obj = error_obj.get("errors")
+                    if isinstance(errors_obj, list):
+                        errors = errors_obj
             return added, errors
         except Exception as e:
             console.print(f"[red]Error adding negative keywords: {e}[/red]")
