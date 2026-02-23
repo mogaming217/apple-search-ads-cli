@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from asa_cli.api import SearchAdsClient
-from asa_cli.config import Credentials, MatchType
+from asa_cli.config import AppConfig, Credentials, MatchType
 
 
 @pytest.fixture
@@ -21,10 +21,21 @@ def mock_credentials():
 
 
 @pytest.fixture
-def mock_client(mock_credentials):
+def mock_app_config():
+    """Create mock app config for testing."""
+    return AppConfig(
+        app_id=999999,
+        app_name="TestApp",
+        default_countries=["US"],
+        default_bid=1.50,
+    )
+
+
+@pytest.fixture
+def mock_client(mock_credentials, mock_app_config):
     """Create a mock SearchAdsClient."""
     with patch.object(SearchAdsClient, "_get_access_token", return_value="mock_token"):
-        client = SearchAdsClient(mock_credentials)
+        client = SearchAdsClient(mock_credentials, app_config=mock_app_config)
         return client
 
 
@@ -263,3 +274,10 @@ class TestCampaignOperations:
             results = mock_client.get_negative_keywords(123)
 
         assert len(results) == 2
+
+    def test_client_uses_injected_app_config(self, mock_credentials, mock_app_config):
+        """Test client uses the injected app_config instead of loading from file."""
+        with patch.object(SearchAdsClient, "_get_access_token", return_value="mock_token"):
+            client = SearchAdsClient(mock_credentials, app_config=mock_app_config)
+            assert client.app_config.app_id == 999999
+            assert client.app_config.app_name == "TestApp"

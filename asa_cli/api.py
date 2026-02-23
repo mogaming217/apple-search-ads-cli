@@ -8,7 +8,7 @@ import jwt
 import requests
 from rich.console import Console
 
-from .config import Credentials, MatchType, load_app_config, load_credentials
+from .config import AppConfig, Credentials, MatchType, get_current_app_config, load_credentials
 
 console = Console()
 
@@ -20,10 +20,15 @@ API_BASE_URL = "https://api.searchads.apple.com/api/v5"
 class SearchAdsClient:
     """Direct Apple Search Ads API client with JWT authentication."""
 
-    def __init__(self, credentials: Optional[Credentials] = None):
-        """Initialize the API client."""
+    def __init__(self, credentials: Optional[Credentials] = None, app_config: Optional[AppConfig] = None):
+        """Initialize the API client.
+
+        Args:
+            credentials: API credentials (loaded from config if not provided)
+            app_config: App configuration (resolved from current app if not provided)
+        """
         self.credentials = credentials or load_credentials()
-        self.app_config = load_app_config()
+        self.app_config = app_config or get_current_app_config()
         self._access_token: Optional[str] = None
         self._token_expiry: Optional[float] = None
 
@@ -242,6 +247,8 @@ class SearchAdsClient:
                 "countriesOrRegions": countries,
                 "status": status,
                 "supplySources": ["APPSTORE_SEARCH_RESULTS"],
+                "adChannelType": "SEARCH",
+                "billingEvent": "TAPS",
             }
 
             response = self._request("POST", "/campaigns", data=campaign_data)
@@ -305,12 +312,30 @@ class SearchAdsClient:
     ) -> Optional[dict[str, Any]]:
         """Create an ad group in a campaign."""
         try:
+            # startTime must be ISO 8601 format
+            from datetime import datetime, timezone
+
+            start_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000")
+
             ad_group_data = {
                 "name": name,
                 "defaultBidAmount": {"amount": str(default_bid), "currency": "USD"},
                 "automatedKeywordsOptIn": search_match_enabled,
+                "pricingModel": "CPC",
+                "startTime": start_time,
                 "status": status,
             }
+
+            # Exclude users who already have the app
+            if self.app_config:
+                ad_group_data["targetingDimensions"] = {
+                    "appDownloaders": {
+                        "excluded": [str(self.app_config.app_id)],
+                    },
+                    "deviceClass": {
+                        "included": ["IPHONE", "IPAD"],
+                    },
+                }
 
             if cpa_goal:
                 ad_group_data["cpaGoal"] = {"amount": str(cpa_goal), "currency": "USD"}

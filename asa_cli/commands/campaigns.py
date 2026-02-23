@@ -14,13 +14,22 @@ from ..config import (
     CampaignType,
     detect_campaign_type,
     get_campaign_name,
-    load_app_config,
+    get_current_app_config,
+    is_multi_app,
     load_credentials,
     parse_campaign_name,
 )
 
 app = typer.Typer(help="Campaign management commands")
 console = Console()
+
+
+def _resolve_app_name() -> Optional[str]:
+    """Get the app_name for campaign scoping (None if single-app)."""
+    if not is_multi_app():
+        return None
+    app_config = get_current_app_config()
+    return app_config.app_name if app_config else None
 
 
 @app.command("list")
@@ -40,6 +49,7 @@ def list_campaigns(
         raise typer.Exit(1)
 
     client = SearchAdsClient(credentials)
+    app_name = _resolve_app_name()
 
     with console.status("[bold blue]Fetching campaigns..."):
         campaigns = client.get_campaigns()
@@ -52,8 +62,8 @@ def list_campaigns(
     filtered_campaigns = []
     for campaign in campaigns:
         name = campaign.get("name", "")
-        parsed = parse_campaign_name(name)
-        ctype = detect_campaign_type(name)
+        parsed = parse_campaign_name(name, app_name=app_name)
+        ctype = detect_campaign_type(name, app_name=app_name)
 
         # Skip non-managed campaigns unless --all flag
         if not all_campaigns and not parsed:
@@ -110,8 +120,7 @@ def list_campaigns(
 
     for campaign in filtered_campaigns:
         name = campaign.get("name", "")
-        parsed = parse_campaign_name(name)
-        ctype = detect_campaign_type(name)
+        ctype = detect_campaign_type(name, app_name=app_name)
 
         ctype_str = ctype.value if ctype else "-"
         status = campaign.get("displayStatus", campaign.get("status", "UNKNOWN"))
@@ -154,7 +163,7 @@ def setup_campaigns(
 ):
     """Set up the 4-campaign structure (Brand, Category, Competitor, Discovery)."""
     credentials = load_credentials()
-    app_config = load_app_config()
+    app_config = get_current_app_config()
 
     if not credentials:
         console.print("[red]No credentials configured. Run 'asa config setup' first.[/red]")
@@ -165,6 +174,8 @@ def setup_campaigns(
         raise typer.Exit(1)
 
     country_list = [c.strip().upper() for c in countries.split(",")]
+    multi_app = is_multi_app()
+    app_name = app_config.app_name if multi_app else None
 
     # Show what will be created
     console.print(Panel("[bold]Campaign Structure Setup[/bold]", expand=False))
@@ -180,7 +191,7 @@ def setup_campaigns(
     table.add_column("Budget")
 
     for ctype, config in CAMPAIGN_STRUCTURE.items():
-        campaign_name = get_campaign_name(ctype)
+        campaign_name = get_campaign_name(ctype, app_name=app_name)
         ad_groups = ", ".join([ag.name for ag in config.ad_groups])
         table.add_row(ctype.value.upper(), campaign_name, ad_groups, f"${budget}/day")
 
@@ -200,10 +211,10 @@ def setup_campaigns(
     with console.status("[bold blue]Checking for existing campaigns..."):
         existing = client.get_campaigns()
 
-    existing_types = {parse_campaign_name(c.get("name", ""))[1] for c in existing if parse_campaign_name(c.get("name", ""))}
+    existing_types = {parse_campaign_name(c.get("name", ""), app_name=app_name)[1] for c in existing if parse_campaign_name(c.get("name", ""), app_name=app_name)}
 
     for ctype, config in CAMPAIGN_STRUCTURE.items():
-        campaign_name = get_campaign_name(ctype)
+        campaign_name = get_campaign_name(ctype, app_name=app_name)
 
         if ctype in existing_types:
             console.print(f"[yellow]Skipping {ctype.value} - campaign type already exists[/yellow]")
@@ -262,6 +273,7 @@ def audit_campaigns(
         raise typer.Exit(1)
 
     client = SearchAdsClient(credentials)
+    app_name = _resolve_app_name()
 
     with console.status("[bold blue]Fetching campaigns and ad groups..."):
         campaigns = client.get_campaigns()
@@ -275,7 +287,7 @@ def audit_campaigns(
     unmanaged_campaigns = []
 
     for campaign in campaigns:
-        parsed = parse_campaign_name(campaign.get("name", ""))
+        parsed = parse_campaign_name(campaign.get("name", ""), app_name=app_name)
         if parsed:
             _, ctype, _ = parsed
             managed_campaigns[ctype].append(campaign)
@@ -333,7 +345,7 @@ def audit_campaigns(
             console.print(f"  [red]•[/red] {issue}")
         console.print("\nRun [cyan]asa campaigns setup[/cyan] to create missing campaigns.")
     else:
-        console.print("\n[bold green]✓ Campaign structure matches Apple's recommendations[/bold green]")
+        console.print("\n[bold green]Campaign structure matches Apple's recommendations[/bold green]")
 
 
 @app.command("pause")
@@ -348,10 +360,11 @@ def pause_campaign(
         raise typer.Exit(1)
 
     client = SearchAdsClient(credentials)
+    app_name = _resolve_app_name()
 
     if all_campaigns:
         campaigns = client.get_campaigns()
-        managed = [c for c in campaigns if parse_campaign_name(c.get("name", ""))]
+        managed = [c for c in campaigns if parse_campaign_name(c.get("name", ""), app_name=app_name)]
 
         if not managed:
             console.print("[yellow]No managed campaigns found.[/yellow]")
@@ -389,10 +402,11 @@ def enable_campaign(
         raise typer.Exit(1)
 
     client = SearchAdsClient(credentials)
+    app_name = _resolve_app_name()
 
     if all_campaigns:
         campaigns = client.get_campaigns()
-        managed = [c for c in campaigns if parse_campaign_name(c.get("name", ""))]
+        managed = [c for c in campaigns if parse_campaign_name(c.get("name", ""), app_name=app_name)]
 
         if not managed:
             console.print("[yellow]No managed campaigns found.[/yellow]")
@@ -427,7 +441,7 @@ def create_campaign(
 ):
     """Create a new campaign with custom settings."""
     credentials = load_credentials()
-    app_config = load_app_config()
+    app_config = get_current_app_config()
 
     if not credentials:
         console.print("[red]No credentials configured. Run 'asa config setup' first.[/red]")
@@ -498,12 +512,12 @@ def update_campaign(
 
     if name:
         updates["name"] = name
-        changes.append(f"Name: {campaign.get('name')} → {name}")
+        changes.append(f"Name: {campaign.get('name')} -> {name}")
 
     if budget:
         updates["dailyBudgetAmount"] = {"amount": str(budget), "currency": "USD"}
         old_budget = campaign.get("dailyBudgetAmount", {}).get("amount", "?")
-        changes.append(f"Daily Budget: ${old_budget} → ${budget}")
+        changes.append(f"Daily Budget: ${old_budget} -> ${budget}")
 
     if status:
         status_upper = status.upper()
@@ -511,11 +525,11 @@ def update_campaign(
             console.print("[red]Status must be ENABLED or PAUSED.[/red]")
             raise typer.Exit(1)
         updates["status"] = status_upper
-        changes.append(f"Status: {campaign.get('status')} → {status_upper}")
+        changes.append(f"Status: {campaign.get('status')} -> {status_upper}")
 
     console.print(f"\nUpdating campaign [cyan]{campaign.get('name')}[/cyan] (ID: {campaign_id}):")
     for change in changes:
-        console.print(f"  • {change}")
+        console.print(f"  - {change}")
 
     with console.status("[bold blue]Updating campaign..."):
         result = client.update_campaign(campaign_id, updates)
@@ -542,10 +556,11 @@ def delete_campaign(
         raise typer.Exit(1)
 
     client = SearchAdsClient(credentials)
+    app_name = _resolve_app_name()
 
     if all_unmanaged:
         campaigns = client.get_campaigns()
-        unmanaged = [c for c in campaigns if not parse_campaign_name(c.get("name", ""))]
+        unmanaged = [c for c in campaigns if not parse_campaign_name(c.get("name", ""), app_name=app_name)]
 
         if not unmanaged:
             console.print("[yellow]No unmanaged campaigns found.[/yellow]")
@@ -591,4 +606,3 @@ def delete_campaign(
     else:
         console.print("[red]Provide a campaign ID or use --all-unmanaged flag.[/red]")
         raise typer.Exit(1)
-

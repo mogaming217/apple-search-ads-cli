@@ -14,6 +14,8 @@ from ..config import (
     CampaignType,
     MatchType,
     detect_campaign_type,
+    get_current_app_config,
+    is_multi_app,
     load_credentials,
     parse_campaign_name,
 )
@@ -22,16 +24,25 @@ app = typer.Typer(help="Keyword management commands")
 console = Console()
 
 
+def _resolve_app_name() -> Optional[str]:
+    """Get the app_name for campaign scoping (None if single-app)."""
+    if not is_multi_app():
+        return None
+    app_config = get_current_app_config()
+    return app_config.app_name if app_config else None
+
+
 def select_campaign(
     client: SearchAdsClient, campaign_type: Optional[CampaignType] = None
 ) -> Optional[dict]:
     """Interactive campaign selection."""
     campaigns = client.get_campaigns()
+    app_name = _resolve_app_name()
 
     # Filter campaigns by type if specified
     filtered = []
     for c in campaigns:
-        ctype = detect_campaign_type(c.get("name", ""))
+        ctype = detect_campaign_type(c.get("name", ""), app_name=app_name)
         if campaign_type is None or ctype == campaign_type:
             filtered.append((c, ctype))
 
@@ -241,6 +252,7 @@ def add_keywords(
         raise typer.Exit(1)
 
     client = SearchAdsClient(credentials)
+    app_name = _resolve_app_name()
 
     # Parse keywords
     keyword_list = [kw.strip().lower() for kw in keywords.split(",") if kw.strip()]
@@ -258,7 +270,7 @@ def add_keywords(
     discovery_campaign = None
 
     for c in campaigns:
-        ctype = detect_campaign_type(c.get("name", ""))
+        ctype = detect_campaign_type(c.get("name", ""), app_name=app_name)
         if ctype == campaign_type:
             target_campaign = c
         elif ctype == CampaignType.DISCOVERY:
@@ -385,6 +397,7 @@ def add_negatives(
         raise typer.Exit(1)
 
     client = SearchAdsClient(credentials)
+    app_name = _resolve_app_name()
 
     keyword_list = [kw.strip().lower() for kw in keywords.split(",") if kw.strip()]
 
@@ -402,7 +415,7 @@ def add_negatives(
     elif all_campaigns:
         campaigns = client.get_campaigns()
         # Include campaigns with recognized types
-        target_campaigns = [c for c in campaigns if detect_campaign_type(c.get("name", ""))]
+        target_campaigns = [c for c in campaigns if detect_campaign_type(c.get("name", ""), app_name=app_name)]
     else:
         campaign = select_campaign(client)
         if campaign:
@@ -436,17 +449,17 @@ def add_negatives(
             added, errors = client.add_negative_keywords(cid, keyword_list)
 
         if added:
-            console.print(f"[green]✓ Added {len(added)} negatives to {cname}[/green]")
+            console.print(f"[green]Added {len(added)} negatives to {cname}[/green]")
             success_count += 1
         elif errors:
             all_duplicates = all(e.get("messageCode") == "DUPLICATE_KEYWORD" for e in errors)
             if all_duplicates:
-                console.print(f"[dim]↳ {len(errors)} negatives already exist in {cname}[/dim]")
+                console.print(f"[dim]{len(errors)} negatives already exist in {cname}[/dim]")
                 success_count += 1
             else:
-                console.print(f"[red]✗ Failed: {errors[0].get('message', 'Unknown error')}[/red]")
+                console.print(f"[red]Failed: {errors[0].get('message', 'Unknown error')}[/red]")
         else:
-            console.print(f"[red]✗ Failed to add negatives to {cname}[/red]")
+            console.print(f"[red]Failed to add negatives to {cname}[/red]")
 
     if success_count > 0:
         console.print("\n[bold green]Negative keywords processed![/bold green]")
@@ -483,6 +496,7 @@ def promote_keywords(
         raise typer.Exit(1)
 
     client = SearchAdsClient(credentials)
+    app_name = _resolve_app_name()
 
     keyword_list = [kw.strip().lower() for kw in keywords.split(",") if kw.strip()]
 
@@ -498,7 +512,7 @@ def promote_keywords(
     discovery_campaign = None
 
     for c in campaigns:
-        ctype = detect_campaign_type(c.get("name", ""))
+        ctype = detect_campaign_type(c.get("name", ""), app_name=app_name)
         if ctype == target_type:
             target_campaign = c
         elif ctype == CampaignType.DISCOVERY:
@@ -775,10 +789,10 @@ def pause_keyword_cmd(
         for kw in active_keywords:
             kw_id = kw.get("id")
             if client.pause_keyword(campaign_id, ad_group_id, kw_id):
-                console.print(f"  [green]✓[/green] {kw.get('text')}")
+                console.print(f"  [green]paused[/green] {kw.get('text')}")
                 success_count += 1
             else:
-                console.print(f"  [red]✗[/red] {kw.get('text')}")
+                console.print(f"  [red]failed[/red] {kw.get('text')}")
         console.print(f"\n[bold green]Paused {success_count}/{len(active_keywords)} keywords.[/bold green]")
         return
 
@@ -859,10 +873,10 @@ def enable_keyword_cmd(
         for kw in paused_keywords:
             kw_id = kw.get("id")
             if client.enable_keyword(campaign_id, ad_group_id, kw_id):
-                console.print(f"  [green]✓[/green] {kw.get('text')}")
+                console.print(f"  [green]enabled[/green] {kw.get('text')}")
                 success_count += 1
             else:
-                console.print(f"  [red]✗[/red] {kw.get('text')}")
+                console.print(f"  [red]failed[/red] {kw.get('text')}")
         console.print(f"\n[bold green]Enabled {success_count}/{len(paused_keywords)} keywords.[/bold green]")
         return
 
@@ -892,4 +906,3 @@ def enable_keyword_cmd(
             console.print(f"[green]Keyword {keyword_id} enabled.[/green]")
         else:
             console.print(f"[red]Failed to enable keyword {keyword_id}.[/red]")
-

@@ -1,5 +1,6 @@
 """Tests for configuration module."""
 
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -12,12 +13,19 @@ from asa_cli.config import (
     AppConfig,
     CampaignType,
     Credentials,
+    MultiAppConfig,
     detect_campaign_type,
+    get_active_app_config,
+    get_app_slug,
     get_campaign_name,
+    is_multi_app,
     load_app_config,
     load_credentials,
+    load_multi_app_config,
     save_app_config,
     save_credentials,
+    save_multi_app_config,
+    set_current_app,
 )
 
 
@@ -49,6 +57,22 @@ class TestCampaignNaming:
         for ctype in CampaignType:
             assert ctype in CAMPAIGN_TYPE_NAMES
             assert get_campaign_name(ctype) is not None
+
+    def test_get_campaign_name_with_app_prefix(self):
+        """Test campaign name with app name prefix (multi-app mode)."""
+        name = get_campaign_name(CampaignType.BRAND, app_name="Stitch It")
+        assert name == "StitchIt - Brand"
+
+    def test_get_campaign_name_with_simple_app(self):
+        """Test campaign name with simple app name."""
+        name = get_campaign_name(CampaignType.DISCOVERY, app_name="ColorCub")
+        assert name == "ColorCub - Discovery"
+
+    def test_get_campaign_name_no_app_is_simple(self):
+        """Test campaign name without app_name returns simple name."""
+        name = get_campaign_name(CampaignType.CATEGORY)
+        assert name == "Category"
+        assert " - " not in name
 
 
 class TestCampaignTypeDetection:
@@ -85,6 +109,23 @@ class TestCampaignTypeDetection:
         """Test unknown campaign returns None."""
         assert detect_campaign_type("Some Random Name") is None
         assert detect_campaign_type("Test Campaign") is None
+
+    def test_detect_scoped_by_app_name(self):
+        """Test detection scoped to specific app name."""
+        # StitchIt - Brand should match for StitchIt
+        assert detect_campaign_type("StitchIt - Brand", app_name="Stitch It") == CampaignType.BRAND
+        # StitchIt - Brand should NOT match for ColorCub
+        assert detect_campaign_type("StitchIt - Brand", app_name="ColorCub") is None
+
+    def test_detect_scoped_accepts_own_app(self):
+        """Test scoped detection accepts campaigns for the specified app."""
+        assert detect_campaign_type("ColorCub - Discovery", app_name="ColorCub") == CampaignType.DISCOVERY
+        assert detect_campaign_type("ColorCub - Category", app_name="ColorCub") == CampaignType.CATEGORY
+
+    def test_detect_unscoped_matches_any(self):
+        """Test unscoped detection matches any campaign with type keyword."""
+        assert detect_campaign_type("StitchIt - Brand") == CampaignType.BRAND
+        assert detect_campaign_type("ColorCub - Discovery") == CampaignType.DISCOVERY
 
 
 class TestCampaignStructure:
@@ -214,3 +255,245 @@ class TestAppConfig:
             assert loaded.app_id == 123456789
             assert loaded.app_name == "TestApp"
             assert loaded.default_bid == 2.50
+
+
+class TestAppSlug:
+    """Tests for app slug derivation."""
+
+    def test_slug_simple_name(self):
+        assert get_app_slug("ColorCub") == "colorcub"
+
+    def test_slug_name_with_spaces(self):
+        assert get_app_slug("Stitch It") == "stitchit"
+
+    def test_slug_name_with_hyphens(self):
+        assert get_app_slug("Re-Shoot") == "reshoot"
+
+    def test_slug_name_with_mixed(self):
+        assert get_app_slug("How High!") == "howhigh"
+
+    def test_slug_already_clean(self):
+        assert get_app_slug("myapp") == "myapp"
+
+
+class TestMultiAppConfig:
+    """Tests for multi-app configuration."""
+
+    def test_multi_app_model(self):
+        """Test MultiAppConfig model."""
+        config = MultiAppConfig(
+            active_app="stitchit",
+            apps={
+                "stitchit": AppConfig(app_id=123, app_name="Stitch It"),
+                "colorcub": AppConfig(app_id=456, app_name="ColorCub"),
+            },
+        )
+        assert config.active_app == "stitchit"
+        assert len(config.apps) == 2
+        assert config.apps["stitchit"].app_id == 123
+
+    def test_multi_app_empty(self):
+        """Test empty MultiAppConfig."""
+        config = MultiAppConfig()
+        assert config.active_app is None
+        assert config.apps == {}
+
+    def test_save_and_load_round_trip(self):
+        """Test saving and loading multi-app config."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            config_file = config_dir / "config.json"
+
+            config = MultiAppConfig(
+                active_app="stitchit",
+                apps={
+                    "stitchit": AppConfig(app_id=123, app_name="Stitch It", default_bid=1.50),
+                    "colorcub": AppConfig(app_id=456, app_name="ColorCub", default_bid=1.00),
+                },
+            )
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                with patch("asa_cli.config.CONFIG_DIR", config_dir):
+                    save_multi_app_config(config)
+
+            assert config_file.exists()
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                loaded = load_multi_app_config()
+
+            assert loaded.active_app == "stitchit"
+            assert len(loaded.apps) == 2
+            assert loaded.apps["stitchit"].app_id == 123
+            assert loaded.apps["colorcub"].app_name == "ColorCub"
+
+    def test_legacy_migration(self):
+        """Test auto-migration from legacy single-app format."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            config_file = config_dir / "config.json"
+            config_dir.mkdir(parents=True, exist_ok=True)
+
+            # Write legacy format
+            legacy_data = {
+                "app_id": 123,
+                "app_name": "Stitch It",
+                "default_countries": ["US"],
+                "default_bid": 1.50,
+            }
+            with open(config_file, "w") as f:
+                json.dump(legacy_data, f)
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                with patch("asa_cli.config.CONFIG_DIR", config_dir):
+                    loaded = load_multi_app_config()
+
+            # Should have migrated
+            assert loaded.active_app == "stitchit"
+            assert "stitchit" in loaded.apps
+            assert loaded.apps["stitchit"].app_id == 123
+            assert loaded.apps["stitchit"].app_name == "Stitch It"
+
+            # Verify file was rewritten in new format
+            with open(config_file) as f:
+                saved_data = json.load(f)
+            assert "apps" in saved_data
+            assert "active_app" in saved_data
+
+    def test_active_app_resolution(self):
+        """Test get_active_app_config resolves correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            config_file = config_dir / "config.json"
+
+            config = MultiAppConfig(
+                active_app="colorcub",
+                apps={
+                    "stitchit": AppConfig(app_id=123, app_name="Stitch It"),
+                    "colorcub": AppConfig(app_id=456, app_name="ColorCub"),
+                },
+            )
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                with patch("asa_cli.config.CONFIG_DIR", config_dir):
+                    save_multi_app_config(config)
+
+            # Without explicit slug, should return active app
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                with patch("asa_cli.config._current_app_slug", None):
+                    result = get_active_app_config()
+                    assert result is not None
+                    assert result.app_name == "ColorCub"
+
+            # With explicit slug, should return that app
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                result = get_active_app_config(app_slug="stitchit")
+                assert result is not None
+                assert result.app_name == "Stitch It"
+
+    def test_module_level_slug_override(self):
+        """Test module-level _current_app_slug overrides active_app."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            config_file = config_dir / "config.json"
+
+            config = MultiAppConfig(
+                active_app="colorcub",
+                apps={
+                    "stitchit": AppConfig(app_id=123, app_name="Stitch It"),
+                    "colorcub": AppConfig(app_id=456, app_name="ColorCub"),
+                },
+            )
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                with patch("asa_cli.config.CONFIG_DIR", config_dir):
+                    save_multi_app_config(config)
+
+            # Set module-level slug
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                with patch("asa_cli.config._current_app_slug", "stitchit"):
+                    result = get_active_app_config()
+                    assert result is not None
+                    assert result.app_name == "Stitch It"
+
+    def test_single_app_returns_it_regardless(self):
+        """Test single app is returned even without active_app set."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            config_file = config_dir / "config.json"
+
+            config = MultiAppConfig(
+                active_app=None,
+                apps={
+                    "myapp": AppConfig(app_id=789, app_name="MyApp"),
+                },
+            )
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                with patch("asa_cli.config.CONFIG_DIR", config_dir):
+                    save_multi_app_config(config)
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                with patch("asa_cli.config._current_app_slug", None):
+                    result = get_active_app_config()
+                    assert result is not None
+                    assert result.app_name == "MyApp"
+
+    def test_is_multi_app(self):
+        """Test is_multi_app returns correct values."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            config_file = config_dir / "config.json"
+
+            # Single app
+            config = MultiAppConfig(
+                active_app="myapp",
+                apps={"myapp": AppConfig(app_id=123, app_name="MyApp")},
+            )
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                with patch("asa_cli.config.CONFIG_DIR", config_dir):
+                    save_multi_app_config(config)
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                assert is_multi_app() is False
+
+            # Multiple apps
+            config.apps["other"] = AppConfig(app_id=456, app_name="Other")
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                with patch("asa_cli.config.CONFIG_DIR", config_dir):
+                    save_multi_app_config(config)
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                assert is_multi_app() is True
+
+    def test_save_app_config_backward_compat(self):
+        """Test save_app_config wraps into multi-app structure."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            config_file = config_dir / "config.json"
+
+            config = AppConfig(app_id=123, app_name="TestApp", default_bid=2.00)
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                with patch("asa_cli.config.CONFIG_DIR", config_dir):
+                    save_app_config(config)
+
+            # Should be saved in multi-app format
+            with open(config_file) as f:
+                data = json.load(f)
+
+            assert "apps" in data
+            assert "testapp" in data["apps"]
+            assert data["active_app"] == "testapp"
+            assert data["apps"]["testapp"]["app_id"] == 123
+
+    def test_no_config_returns_none(self):
+        """Test get_active_app_config returns None when no config exists."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_file = Path(tmpdir) / "nonexistent.json"
+
+            with patch("asa_cli.config.CONFIG_FILE", config_file):
+                with patch("asa_cli.config._current_app_slug", None):
+                    result = get_active_app_config()
+                    assert result is None

@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -132,6 +133,38 @@ class AppConfig(BaseModel):
     default_cpa_goal: Optional[float] = Field(None, description="Default CPA goal in USD")
 
 
+class MultiAppConfig(BaseModel):
+    """Multi-app configuration container."""
+
+    active_app: Optional[str] = Field(None, description="Active app slug")
+    apps: dict[str, AppConfig] = Field(default_factory=dict, description="App configs by slug")
+
+
+# ---------------------------------------------------------------------------
+# Module-level state for current app (set once in main.py callback)
+# Safe for single-threaded CLI.
+# ---------------------------------------------------------------------------
+_current_app_slug: Optional[str] = None
+
+
+def set_current_app(slug: Optional[str]) -> None:
+    """Set the current app slug (called from --app flag in main.py callback)."""
+    global _current_app_slug
+    _current_app_slug = slug
+
+
+def get_app_slug(app_name: str) -> str:
+    """Derive a slug from an app name.
+
+    Examples:
+        "Stitch It" -> "stitchit"
+        "ColorCub"  -> "colorcub"
+        "How High"  -> "howhigh"
+        "Re-Shoot"  -> "reshoot"
+    """
+    return re.sub(r"[^a-z0-9]", "", app_name.lower())
+
+
 def ensure_config_dir() -> None:
     """Ensure the config directory exists."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -159,54 +192,160 @@ def save_credentials(credentials: Credentials) -> None:
     console.print(f"[green]Credentials saved to {CREDENTIALS_FILE}[/green]")
 
 
-def load_app_config() -> Optional[AppConfig]:
-    """Load app configuration from config file."""
+# ---------------------------------------------------------------------------
+# Multi-app config load / save with legacy migration
+# ---------------------------------------------------------------------------
+
+def load_multi_app_config() -> MultiAppConfig:
+    """Load multi-app config from config file, migrating legacy format if needed.
+
+    Legacy format (has 'app_id' at root, no 'apps' key):
+        {"app_id": 123, "app_name": "Stitch It", ...}
+
+    New format:
+        {"active_app": "stitchit", "apps": {"stitchit": {...}}}
+
+    Returns MultiAppConfig (may have empty apps dict if no config exists).
+    """
     if not CONFIG_FILE.exists():
-        return None
+        return MultiAppConfig()
+
     try:
         with open(CONFIG_FILE) as f:
             data = json.load(f)
-        return AppConfig(**data)
     except (json.JSONDecodeError, ValueError) as e:
         console.print(f"[red]Error loading config: {e}[/red]")
-        return None
+        return MultiAppConfig()
+
+    # Detect legacy format: has 'app_id' at root and no 'apps' key
+    if "app_id" in data and "apps" not in data:
+        app_config = AppConfig(**data)
+        slug = get_app_slug(app_config.app_name)
+        multi = MultiAppConfig(active_app=slug, apps={slug: app_config})
+        # Auto-migrate: save in new format
+        save_multi_app_config(multi)
+        return multi
+
+    # New format
+    return MultiAppConfig(**data)
 
 
-def save_app_config(config: AppConfig) -> None:
-    """Save app configuration to config file."""
+def save_multi_app_config(config: MultiAppConfig) -> None:
+    """Save multi-app config to config file."""
     ensure_config_dir()
     with open(CONFIG_FILE, "w") as f:
         json.dump(config.model_dump(), f, indent=2)
+
+
+def get_active_app_config(app_slug: Optional[str] = None) -> Optional[AppConfig]:
+    """Resolve an app config by slug, or fall back to active_app.
+
+    Priority:
+    1. Explicit app_slug parameter
+    2. Module-level _current_app_slug (set by --app flag)
+    3. MultiAppConfig.active_app
+
+    Returns None if no app is configured or slug not found.
+    """
+    multi = load_multi_app_config()
+
+    if not multi.apps:
+        return None
+
+    slug = app_slug or _current_app_slug or multi.active_app
+
+    if slug and slug in multi.apps:
+        return multi.apps[slug]
+
+    # If only one app and no slug specified, return it
+    if len(multi.apps) == 1:
+        return next(iter(multi.apps.values()))
+
+    return None
+
+
+def get_current_app_config() -> Optional[AppConfig]:
+    """Get the app config for the current app (convenience wrapper)."""
+    return get_active_app_config()
+
+
+def is_multi_app() -> bool:
+    """Return True if more than one app is configured."""
+    multi = load_multi_app_config()
+    return len(multi.apps) > 1
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible load/save wrappers
+# ---------------------------------------------------------------------------
+
+def load_app_config() -> Optional[AppConfig]:
+    """Load app configuration from config file.
+
+    Backward-compatible wrapper that returns the active app's config.
+    """
+    return get_active_app_config()
+
+
+def save_app_config(config: AppConfig) -> None:
+    """Save app configuration to config file.
+
+    Backward-compatible wrapper that saves into the multi-app structure.
+    """
+    multi = load_multi_app_config()
+    slug = get_app_slug(config.app_name)
+
+    multi.apps[slug] = config
+    if multi.active_app is None:
+        multi.active_app = slug
+
+    save_multi_app_config(multi)
     console.print(f"[green]Config saved to {CONFIG_FILE}[/green]")
 
 
-def get_campaign_name(campaign_type: CampaignType) -> str:
-    """Get the simple campaign name for a type.
+# ---------------------------------------------------------------------------
+# Campaign naming (with optional app prefix for multi-app)
+# ---------------------------------------------------------------------------
 
-    Returns simple names like "Brand", "Category", "Competitor", "Discovery".
+def get_campaign_name(campaign_type: CampaignType, app_name: Optional[str] = None) -> str:
+    """Get the campaign name for a type, optionally prefixed with app name.
+
+    Single-app:  "Brand", "Category", etc.
+    Multi-app:   "StitchIt - Brand", "ColorCub - Category", etc.
+
+    When app_name is provided (multi-app mode), the name is prefixed.
     """
-    return CAMPAIGN_TYPE_NAMES[campaign_type]
+    type_name = CAMPAIGN_TYPE_NAMES[campaign_type]
+    if app_name:
+        # Remove spaces/special chars from app name for clean prefix
+        clean_name = re.sub(r"[^a-zA-Z0-9]", "", app_name)
+        return f"{clean_name} - {type_name}"
+    return type_name
 
 
-def detect_campaign_type(name: str) -> Optional[CampaignType]:
+def detect_campaign_type(name: str, app_name: Optional[str] = None) -> Optional[CampaignType]:
     """Detect campaign type from a campaign name (case-insensitive).
 
-    Looks for type keywords in the campaign name:
-    - "brand" -> CampaignType.BRAND
-    - "category" -> CampaignType.CATEGORY
-    - "competitor" -> CampaignType.COMPETITOR
-    - "discovery" -> CampaignType.DISCOVERY
+    When app_name is provided (multi-app scoping), also requires the app name
+    prefix to be present in the campaign name.
 
     Returns the CampaignType or None if not detected.
     """
     name_lower = name.lower()
+
+    # If app_name is provided, require it in the campaign name
+    if app_name:
+        clean_app = re.sub(r"[^a-z0-9]", "", app_name.lower())
+        if clean_app not in re.sub(r"[^a-z0-9]", "", name_lower):
+            return None
+
     for ctype, type_name in CAMPAIGN_TYPE_NAMES.items():
         if type_name.lower() in name_lower:
             return ctype
     return None
 
 
-def parse_campaign_name(name: str, prefix: Optional[str] = None) -> Optional[tuple[str, CampaignType, list[str]]]:
+def parse_campaign_name(name: str, app_name: Optional[str] = None) -> Optional[tuple[str, CampaignType, list[str]]]:
     """Parse a campaign name to detect its type.
 
     This function provides backward compatibility. It now uses simple name detection.
@@ -214,13 +353,13 @@ def parse_campaign_name(name: str, prefix: Optional[str] = None) -> Optional[tup
 
     The app_name and countries are placeholder values since we no longer encode them in the name.
     """
-    ctype = detect_campaign_type(name)
+    ctype = detect_campaign_type(name, app_name=app_name)
     if ctype:
         # Return placeholder values for backward compatibility
-        app_config = load_app_config()
-        app_name = app_config.app_name if app_config else "App"
+        app_config = get_active_app_config()
+        resolved_app_name = app_config.app_name if app_config else "App"
         countries = app_config.default_countries if app_config else ["US"]
-        return (app_name, ctype, countries)
+        return (resolved_app_name, ctype, countries)
     return None
 
 
@@ -266,4 +405,3 @@ def prompt_for_app_config() -> AppConfig:
         default_countries=[c.strip().upper() for c in countries.split(",")],
         default_bid=default_bid,
     )
-

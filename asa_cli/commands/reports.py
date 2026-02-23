@@ -9,7 +9,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ..api import SearchAdsClient
-from ..config import CampaignType, load_credentials, parse_campaign_name
+from ..config import CampaignType, get_current_app_config, is_multi_app, load_credentials, parse_campaign_name
 
 app = typer.Typer(help="Reporting and analytics commands")
 console = Console()
@@ -32,9 +32,17 @@ def format_number(num: float) -> str:
     return f"{num:.2f}" if num % 1 else str(int(num))
 
 
-def get_campaign_type_label(campaign_name: str) -> str:
+def _resolve_app_name() -> Optional[str]:
+    """Get the app_name for campaign scoping (None if single-app)."""
+    if not is_multi_app():
+        return None
+    app_config = get_current_app_config()
+    return app_config.app_name if app_config else None
+
+
+def get_campaign_type_label(campaign_name: str, app_name: Optional[str] = None) -> str:
     """Get campaign type label from name, supporting both simple and managed naming."""
-    parsed = parse_campaign_name(campaign_name)
+    parsed = parse_campaign_name(campaign_name, app_name=app_name)
     if parsed:
         return parsed[1].value.upper()
     # Support simple naming (Brand, Category, Competitor, Discovery)
@@ -76,12 +84,14 @@ def report_summary(
     with console.status("[bold blue]Fetching campaigns..."):
         campaigns = client.get_campaigns()
 
+    app_name = _resolve_app_name()
+
     # Filter campaigns based on flag
     if all_campaigns:
-        campaign_list = [(c, get_campaign_type_label(c.get("name", ""))) for c in campaigns]
+        campaign_list = [(c, get_campaign_type_label(c.get("name", ""), app_name=app_name)) for c in campaigns]
     else:
         # Only managed campaigns with specific naming
-        managed = [(c, parse_campaign_name(c.get("name", ""))) for c in campaigns]
+        managed = [(c, parse_campaign_name(c.get("name", ""), app_name=app_name)) for c in campaigns]
         campaign_list = [(c, p[1].value.upper()) for c, p in managed if p]
 
     if not campaign_list:
@@ -209,7 +219,7 @@ def report_keywords(
         table.add_column("Name")
 
         for idx, c in enumerate(campaigns, 1):
-            ctype = get_campaign_type_label(c.get("name", ""))
+            ctype = get_campaign_type_label(c.get("name", ""), app_name=_resolve_app_name())
             table.add_row(str(idx), ctype, c.get("name", "")[:50])
 
         console.print(table)
@@ -347,7 +357,7 @@ def report_adgroups(
         table.add_column("Name")
 
         for idx, c in enumerate(campaigns, 1):
-            ctype = get_campaign_type_label(c.get("name", ""))
+            ctype = get_campaign_type_label(c.get("name", ""), app_name=_resolve_app_name())
             table.add_row(str(idx), ctype, c.get("name", "")[:50])
 
         console.print(table)
@@ -374,7 +384,7 @@ def report_adgroups(
     for campaign in campaigns_to_report:
         cid = campaign.get("id")
         cname = campaign.get("name", "Unknown")
-        ctype = get_campaign_type_label(cname)
+        ctype = get_campaign_type_label(cname, app_name=_resolve_app_name())
 
         with console.status(f"[bold blue]Fetching {cname} ad group report..."):
             report_data = client.get_ad_group_report(cid, start, end)
@@ -504,7 +514,7 @@ def report_impression_share(
         table.add_column("Name")
 
         for idx, c in enumerate(campaigns, 1):
-            ctype = get_campaign_type_label(c.get("name", ""))
+            ctype = get_campaign_type_label(c.get("name", ""), app_name=_resolve_app_name())
             table.add_row(str(idx), ctype, c.get("name", "")[:50])
 
         console.print(table)
@@ -531,7 +541,7 @@ def report_impression_share(
     for campaign in campaigns_to_report:
         cid = campaign.get("id")
         cname = campaign.get("name", "Unknown")
-        ctype = get_campaign_type_label(cname)
+        ctype = get_campaign_type_label(cname, app_name=_resolve_app_name())
 
         with console.status(f"[bold blue]Fetching {cname} impression share data..."):
             report_data = client.get_impression_share_report(cid, start, end)
@@ -685,9 +695,10 @@ def report_search_terms(
         campaigns = client.get_campaigns()
         discovery = None
 
+        app_name = _resolve_app_name()
         for c in campaigns:
             name = c.get("name", "")
-            parsed = parse_campaign_name(name)
+            parsed = parse_campaign_name(name, app_name=app_name)
             # Support both managed naming and simple naming (e.g., "Discovery")
             if (parsed and parsed[1] == CampaignType.DISCOVERY) or "discovery" in name.lower():
                 discovery = c
@@ -710,7 +721,7 @@ def report_search_terms(
             table.add_column("Name")
 
             for idx, c in enumerate(campaigns, 1):
-                ctype = get_campaign_type_label(c.get("name", ""))
+                ctype = get_campaign_type_label(c.get("name", ""), app_name=_resolve_app_name())
                 table.add_row(str(idx), ctype, c.get("name", "")[:50])
 
             console.print(table)

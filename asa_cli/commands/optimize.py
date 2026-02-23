@@ -15,7 +15,8 @@ from ..config import (
     CampaignType,
     MatchType,
     detect_campaign_type,
-    load_app_config,
+    get_current_app_config,
+    is_multi_app,
     load_credentials,
 )
 
@@ -28,8 +29,17 @@ def format_currency(amount: float) -> str:
     return f"${amount:,.2f}"
 
 
+def _resolve_app_name() -> Optional[str]:
+    """Get the app_name for campaign scoping (None if single-app)."""
+    if not is_multi_app():
+        return None
+    app_config = get_current_app_config()
+    return app_config.app_name if app_config else None
+
+
 def get_campaigns_indexed(
     client: SearchAdsClient,
+    app_name: Optional[str] = None,
 ) -> tuple[dict[CampaignType, dict], list[tuple[dict, CampaignType]]]:
     """Get all campaigns, indexed by type and as a list.
 
@@ -44,7 +54,7 @@ def get_campaigns_indexed(
     managed: list[tuple[dict, CampaignType]] = []
 
     for c in campaigns:
-        ctype = detect_campaign_type(c.get("name", ""))
+        ctype = detect_campaign_type(c.get("name", ""), app_name=app_name)
         if ctype:
             by_type[ctype] = c
             managed.append((c, ctype))
@@ -409,14 +419,15 @@ def optimize_cmd(
     target_type = target_type_map[target.lower()]
 
     client = SearchAdsClient(credentials)
+    app_name = _resolve_app_name()
 
     if not output_json:
         with console.status("[bold blue]Finding campaigns..."):
-            campaigns_by_type, managed_campaigns = get_campaigns_indexed(client)
+            campaigns_by_type, managed_campaigns = get_campaigns_indexed(client, app_name=app_name)
             discovery_campaign = campaigns_by_type.get(CampaignType.DISCOVERY)
             target_campaign = campaigns_by_type.get(target_type)
     else:
-        campaigns_by_type, managed_campaigns = get_campaigns_indexed(client)
+        campaigns_by_type, managed_campaigns = get_campaigns_indexed(client, app_name=app_name)
         discovery_campaign = campaigns_by_type.get(CampaignType.DISCOVERY)
         target_campaign = campaigns_by_type.get(target_type)
 
