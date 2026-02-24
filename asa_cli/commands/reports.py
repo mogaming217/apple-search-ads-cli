@@ -86,6 +86,10 @@ def report_summary(
 
     app_name = _resolve_app_name()
 
+    # Filter campaigns to current app first (in multi-app mode)
+    if app_name:
+        campaigns = [c for c in campaigns if parse_campaign_name(c.get("name", ""), app_name=app_name)]
+
     # Filter campaigns based on flag
     if all_campaigns:
         campaign_list = [(c, get_campaign_type_label(c.get("name", ""), app_name=app_name)) for c in campaigns]
@@ -208,6 +212,11 @@ def report_keywords(
     # Select campaign if not provided
     if campaign_id is None:
         campaigns = client.get_campaigns()
+        app_name = _resolve_app_name()
+
+        # Filter to current app in multi-app mode
+        if app_name:
+            campaigns = [c for c in campaigns if parse_campaign_name(c.get("name", ""), app_name=app_name)]
 
         if not campaigns:
             console.print("[yellow]No campaigns found.[/yellow]")
@@ -219,7 +228,7 @@ def report_keywords(
         table.add_column("Name")
 
         for idx, c in enumerate(campaigns, 1):
-            ctype = get_campaign_type_label(c.get("name", ""), app_name=_resolve_app_name())
+            ctype = get_campaign_type_label(c.get("name", ""), app_name=app_name)
             table.add_row(str(idx), ctype, c.get("name", "")[:50])
 
         console.print(table)
@@ -333,9 +342,15 @@ def report_adgroups(
 
     # Get campaigns to report on
     campaigns_to_report = []
+    app_name = _resolve_app_name()
+
+    def _filter_by_app(campaigns: list) -> list:
+        if app_name:
+            return [c for c in campaigns if parse_campaign_name(c.get("name", ""), app_name=app_name)]
+        return campaigns
 
     if all_campaigns:
-        campaigns = client.get_campaigns()
+        campaigns = _filter_by_app(client.get_campaigns())
         campaigns_to_report = campaigns
     elif campaign_id:
         campaign = client.get_campaign(campaign_id)
@@ -346,7 +361,7 @@ def report_adgroups(
             raise typer.Exit(1)
     else:
         # Interactive selection
-        campaigns = client.get_campaigns()
+        campaigns = _filter_by_app(client.get_campaigns())
         if not campaigns:
             console.print("[yellow]No campaigns found.[/yellow]")
             return
@@ -357,7 +372,7 @@ def report_adgroups(
         table.add_column("Name")
 
         for idx, c in enumerate(campaigns, 1):
-            ctype = get_campaign_type_label(c.get("name", ""), app_name=_resolve_app_name())
+            ctype = get_campaign_type_label(c.get("name", ""), app_name=app_name)
             table.add_row(str(idx), ctype, c.get("name", "")[:50])
 
         console.print(table)
@@ -490,9 +505,15 @@ def report_impression_share(
 
     # Get campaigns to report on
     campaigns_to_report = []
+    app_name = _resolve_app_name()
+
+    def _filter_by_app(campaigns: list) -> list:
+        if app_name:
+            return [c for c in campaigns if parse_campaign_name(c.get("name", ""), app_name=app_name)]
+        return campaigns
 
     if all_campaigns:
-        campaigns = client.get_campaigns()
+        campaigns = _filter_by_app(client.get_campaigns())
         campaigns_to_report = campaigns
     elif campaign_id:
         campaign = client.get_campaign(campaign_id)
@@ -503,7 +524,7 @@ def report_impression_share(
             raise typer.Exit(1)
     else:
         # Interactive selection
-        campaigns = client.get_campaigns()
+        campaigns = _filter_by_app(client.get_campaigns())
         if not campaigns:
             console.print("[yellow]No campaigns found.[/yellow]")
             return
@@ -514,7 +535,7 @@ def report_impression_share(
         table.add_column("Name")
 
         for idx, c in enumerate(campaigns, 1):
-            ctype = get_campaign_type_label(c.get("name", ""), app_name=_resolve_app_name())
+            ctype = get_campaign_type_label(c.get("name", ""), app_name=app_name)
             table.add_row(str(idx), ctype, c.get("name", "")[:50])
 
         console.print(table)
@@ -693,9 +714,13 @@ def report_search_terms(
     # Find Discovery campaign if not specified
     if campaign_id is None:
         campaigns = client.get_campaigns()
-        discovery = None
-
         app_name = _resolve_app_name()
+
+        # Filter to current app in multi-app mode
+        if app_name:
+            campaigns = [c for c in campaigns if parse_campaign_name(c.get("name", ""), app_name=app_name)]
+
+        discovery = None
         for c in campaigns:
             name = c.get("name", "")
             parsed = parse_campaign_name(name, app_name=app_name)
@@ -721,7 +746,7 @@ def report_search_terms(
             table.add_column("Name")
 
             for idx, c in enumerate(campaigns, 1):
-                ctype = get_campaign_type_label(c.get("name", ""), app_name=_resolve_app_name())
+                ctype = get_campaign_type_label(c.get("name", ""), app_name=app_name)
                 table.add_row(str(idx), ctype, c.get("name", "")[:50])
 
             console.print(table)
