@@ -10,14 +10,21 @@
 
 ## 現在のピン
 
-- タグ: `pinned-2026-04-15`
-- SHA: `db483db`（upstream `main` の 2026-02-24 時点 HEAD）
+- タグ: `pinned-2026-04-15-jpy`
+- SHA: `0ec9995`（fork 側 JPY 対応パッチ適用済み）
 
 ### インストール
 
 ```bash
-uv tool install "git+https://github.com/mogaming217/apple-search-ads-cli.git@db483db"
+uv tool install "git+https://github.com/mogaming217/apple-search-ads-cli.git@0ec9995"
 ```
+
+### 過去のピン
+
+| タグ | SHA | 内容 |
+| --- | --- | --- |
+| `pinned-2026-04-15` | `db483db` | upstream `main` 時点の HEAD（2026-02-24）|
+| `pinned-2026-04-15-jpy` | `0ec9995` | 上記 + 非 USD 組織対応パッチ |
 
 ## 初回監査ログ（2026-04-15, SHA db483db）
 
@@ -67,6 +74,22 @@ git push origin "pinned-$TODAY"
 
 uv tool upgrade asa-cli  # もしくは再 install
 ```
+
+## Fork 独自パッチ
+
+upstream に無い、このフォークで追加した変更：
+
+### 非 USD 組織対応（2026-04-15, SHA `0ec9995`）
+
+upstream は `currency: "USD"` をハードコードしており、JPY など USD 以外の組織では bid/budget が正しく送信できない。以下を修正：
+
+- `Credentials` モデルに `currency: str = "USD"` フィールドを追加（デフォルト USD で後方互換）
+- `SearchAdsClient.currency` プロパティを追加し、API へ送る全 payload（campaign budget / ad group default bid / keyword bid / CPA goal）で使用
+- `config.format_money()` ヘルパーを追加。JPY/KRW/VND/CLP/HUF/ISK は小数なし、`$/¥/€/£/₩` 等の通貨記号対応
+- コマンド側の表示から `$` ハードコードを除去、`format_money` 経由に差し替え
+- `--bid` / `--budget` のヘルプ文言を `(USD)` → `(in org currency)` に変更
+
+JPY 組織で使う場合は `credentials.json` に `"currency": "JPY"` を追記するだけ。
 
 ## 運用上の追加推奨
 
