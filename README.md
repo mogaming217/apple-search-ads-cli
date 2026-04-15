@@ -1,5 +1,9 @@
 # 🍎 Apple Search Ads CLI
 
+> **Note:** これは [cameronehrlich/apple-search-ads-cli](https://github.com/cameronehrlich/apple-search-ads-cli) のフォークです。サプライチェーンリスクを抑えるため、upstream を自動追従せず、レビュー済みの SHA のみを pinned タグで運用しています。監査ログ・運用手順・推奨インストールコマンドは [FORK_NOTES.md](./FORK_NOTES.md) を参照してください。
+
+---
+
 > **The missing command-line interface for Apple Search Ads.** Manage campaigns, keywords, and reporting using Apple's recommended 4-campaign structure.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
