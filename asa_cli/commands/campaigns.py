@@ -102,7 +102,7 @@ def list_campaigns(
                         bid_data = ag.get("defaultBidAmount", {})
                         bid_amount = bid_data.get("amount", "?")
                         ag_name = ag.get("name", "")[:15]
-                        bids.append(f"{ag_name}: ${bid_amount}")
+                        bids.append(f"{ag_name}: {bid_amount}")
                     campaign_bids[cid] = " | ".join(bids)
                 else:
                     campaign_bids[cid] = "-"
@@ -125,7 +125,7 @@ def list_campaigns(
         ctype_str = ctype.value if ctype else "-"
         status = campaign.get("displayStatus", campaign.get("status", "UNKNOWN"))
         daily_budget = campaign.get("dailyBudgetAmount", {})
-        budget_str = f"${daily_budget.get('amount', '?')} {daily_budget.get('currency', '')}"
+        budget_str = f"{daily_budget.get('amount', '?')} {daily_budget.get('currency', '')}"
         countries = ", ".join(campaign.get("countriesOrRegions", []))
 
         status_style = "green" if status == "RUNNING" else "yellow" if status == "PAUSED" else "red"
@@ -157,8 +157,8 @@ def list_campaigns(
 @app.command("setup")
 def setup_campaigns(
     countries: str = typer.Option("US", "--countries", "-c", help="Comma-separated country codes"),
-    budget: float = typer.Option(50.0, "--budget", "-b", help="Daily budget per campaign (USD)"),
-    bid: float = typer.Option(1.50, "--bid", help="Default keyword bid (USD)"),
+    budget: float = typer.Option(50.0, "--budget", "-b", help="Daily budget per campaign (in org currency)"),
+    bid: float = typer.Option(1.50, "--bid", help="Default keyword bid (in org currency)"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without creating"),
 ):
     """Set up the 4-campaign structure (Brand, Category, Competitor, Discovery)."""
@@ -181,8 +181,8 @@ def setup_campaigns(
     console.print(Panel("[bold]Campaign Structure Setup[/bold]", expand=False))
     console.print(f"\nApp: [cyan]{app_config.app_name}[/cyan] (ID: {app_config.app_id})")
     console.print(f"Countries: [cyan]{', '.join(country_list)}[/cyan]")
-    console.print(f"Daily Budget: [cyan]${budget}[/cyan] per campaign")
-    console.print(f"Default Bid: [cyan]${bid}[/cyan]\n")
+    console.print(f"Daily Budget: [cyan]{budget} {credentials.currency}[/cyan] per campaign")
+    console.print(f"Default Bid: [cyan]{bid} {credentials.currency}[/cyan]\n")
 
     table = Table(title="Campaigns to Create", show_header=True)
     table.add_column("Type")
@@ -193,7 +193,7 @@ def setup_campaigns(
     for ctype, config in CAMPAIGN_STRUCTURE.items():
         campaign_name = get_campaign_name(ctype, app_name=app_name)
         ad_groups = ", ".join([ag.name for ag in config.ad_groups])
-        table.add_row(ctype.value.upper(), campaign_name, ad_groups, f"${budget}/day")
+        table.add_row(ctype.value.upper(), campaign_name, ad_groups, f"{budget} {credentials.currency}/day")
 
     console.print(table)
 
@@ -486,7 +486,7 @@ def create_campaign(
 def update_campaign(
     campaign_id: int = typer.Argument(..., help="Campaign ID to update"),
     name: Optional[str] = typer.Option(None, "--name", "-n", help="New campaign name"),
-    budget: Optional[float] = typer.Option(None, "--budget", "-b", help="New daily budget (USD)"),
+    budget: Optional[float] = typer.Option(None, "--budget", "-b", help="New daily budget (in org currency)"),
     status: Optional[str] = typer.Option(None, "--status", "-s", help="New status (ENABLED or PAUSED)"),
 ):
     """Update a campaign's name, budget, or status."""
@@ -515,9 +515,9 @@ def update_campaign(
         changes.append(f"Name: {campaign.get('name')} -> {name}")
 
     if budget:
-        updates["dailyBudgetAmount"] = {"amount": str(budget), "currency": "USD"}
+        updates["dailyBudgetAmount"] = {"amount": str(budget), "currency": client.currency}
         old_budget = campaign.get("dailyBudgetAmount", {}).get("amount", "?")
-        changes.append(f"Daily Budget: ${old_budget} -> ${budget}")
+        changes.append(f"Daily Budget: {old_budget} -> {budget} {client.currency}")
 
     if status:
         status_upper = status.upper()

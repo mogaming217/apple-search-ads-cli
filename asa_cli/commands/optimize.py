@@ -15,6 +15,7 @@ from ..config import (
     CampaignType,
     MatchType,
     detect_campaign_type,
+    format_money,
     get_current_app_config,
     is_multi_app,
     load_credentials,
@@ -25,8 +26,8 @@ console = Console()
 
 
 def format_currency(amount: float) -> str:
-    """Format currency for display."""
-    return f"${amount:,.2f}"
+    """Format currency for display using org currency."""
+    return format_money(amount)
 
 
 def _resolve_app_name() -> Optional[str]:

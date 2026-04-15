@@ -121,6 +121,31 @@ class Credentials(BaseModel):
     key_id: str = Field(..., description="Key ID from Apple Ads API settings")
     private_key_path: str = Field(..., description="Path to private key PEM file")
     public_key_path: Optional[str] = Field(None, description="Path to public key PEM file")
+    currency: str = Field(default="USD", description="Org currency (e.g., USD, JPY). Determines bid/budget amounts and display formatting.")
+
+
+# Currencies that are commonly represented without fractional digits.
+_ZERO_DECIMAL_CURRENCIES = {"JPY", "KRW", "CLP", "VND", "ISK", "HUF"}
+_CURRENCY_SYMBOLS = {"USD": "$", "JPY": "¥", "EUR": "€", "GBP": "£", "KRW": "₩", "CNY": "¥"}
+
+
+def get_currency() -> str:
+    """Resolve the active org currency, falling back to USD if credentials missing."""
+    creds = load_credentials()
+    return creds.currency if creds else "USD"
+
+
+def format_money(amount: float, currency: Optional[str] = None) -> str:
+    """Format a monetary amount using the given (or active) currency."""
+    cur = currency or get_currency()
+    symbol = _CURRENCY_SYMBOLS.get(cur, "")
+    if cur in _ZERO_DECIMAL_CURRENCIES:
+        body = f"{amount:,.0f}"
+    else:
+        body = f"{amount:,.2f}"
+    if symbol:
+        return f"{symbol}{body}"
+    return f"{body} {cur}"
 
 
 class AppConfig(BaseModel):

@@ -207,7 +207,7 @@ def list_keywords(
 
         for kw in keywords:
             bid = kw.get("bidAmount", {})
-            bid_str = f"${bid.get('amount', '?')}" if bid else "-"
+            bid_str = f"{bid.get('amount', '?')} {bid.get('currency', '')}" if bid else "-"
             table.add_row(
                 str(kw.get("id")),
                 kw.get("text", ""),
@@ -719,7 +719,7 @@ def update_bid(
 
         for idx, kw in enumerate(keywords, 1):
             current_bid = kw.get("bidAmount", {})
-            bid_str = f"${current_bid.get('amount', '?')}" if current_bid else "-"
+            bid_str = f"{current_bid.get('amount', '?')} {current_bid.get('currency', '')}" if current_bid else "-"
             table.add_row(str(idx), kw.get("text", ""), bid_str, kw.get("status", ""))
 
         console.print(table)
@@ -805,7 +805,7 @@ def pause_keyword_cmd(
 
         for idx, kw in enumerate(active_keywords, 1):
             current_bid = kw.get("bidAmount", {})
-            bid_str = f"${current_bid.get('amount', '?')}" if current_bid else "-"
+            bid_str = f"{current_bid.get('amount', '?')} {current_bid.get('currency', '')}" if current_bid else "-"
             table.add_row(str(idx), kw.get("text", ""), bid_str)
 
         console.print(table)
@@ -889,7 +889,7 @@ def enable_keyword_cmd(
 
         for idx, kw in enumerate(paused_keywords, 1):
             current_bid = kw.get("bidAmount", {})
-            bid_str = f"${current_bid.get('amount', '?')}" if current_bid else "-"
+            bid_str = f"{current_bid.get('amount', '?')} {current_bid.get('currency', '')}" if current_bid else "-"
             table.add_row(str(idx), kw.get("text", ""), bid_str)
 
         console.print(table)

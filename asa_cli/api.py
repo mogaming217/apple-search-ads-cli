@@ -32,6 +32,11 @@ class SearchAdsClient:
         self._access_token: Optional[str] = None
         self._token_expiry: Optional[float] = None
 
+    @property
+    def currency(self) -> str:
+        """Org currency used for all bid/budget amounts sent to Apple."""
+        return self.credentials.currency if self.credentials else "USD"
+
     def _create_client_secret(self) -> str:
         """Create a JWT client secret for Apple OAuth.
 
@@ -242,8 +247,8 @@ class SearchAdsClient:
             campaign_data = {
                 "name": name,
                 "adamId": self.app_config.app_id,
-                "budgetAmount": {"amount": str(budget), "currency": "USD"},
-                "dailyBudgetAmount": {"amount": str(daily_budget or budget), "currency": "USD"},
+                "budgetAmount": {"amount": str(budget), "currency": self.currency},
+                "dailyBudgetAmount": {"amount": str(daily_budget or budget), "currency": self.currency},
                 "countriesOrRegions": countries,
                 "status": status,
                 "supplySources": ["APPSTORE_SEARCH_RESULTS"],
@@ -319,7 +324,7 @@ class SearchAdsClient:
 
             ad_group_data = {
                 "name": name,
-                "defaultBidAmount": {"amount": str(default_bid), "currency": "USD"},
+                "defaultBidAmount": {"amount": str(default_bid), "currency": self.currency},
                 "automatedKeywordsOptIn": search_match_enabled,
                 "pricingModel": "CPC",
                 "startTime": start_time,
@@ -338,7 +343,7 @@ class SearchAdsClient:
                 }
 
             if cpa_goal:
-                ad_group_data["cpaGoal"] = {"amount": str(cpa_goal), "currency": "USD"}
+                ad_group_data["cpaGoal"] = {"amount": str(cpa_goal), "currency": self.currency}
 
             response = self._request(
                 "POST", f"/campaigns/{campaign_id}/adgroups", data=ad_group_data
@@ -417,7 +422,7 @@ class SearchAdsClient:
             {
                 "text": kw.strip().lower(),
                 "matchType": match_type.value,
-                "bidAmount": {"amount": str(default_bid), "currency": "USD"},
+                "bidAmount": {"amount": str(default_bid), "currency": self.currency},
             }
             for kw in keywords
             if kw.strip()
@@ -544,7 +549,7 @@ class SearchAdsClient:
         try:
             # Use bulk update endpoint with keyword object including ID
             update_data = [
-                {"id": keyword_id, "bidAmount": {"amount": str(bid_amount), "currency": "USD"}}
+                {"id": keyword_id, "bidAmount": {"amount": str(bid_amount), "currency": self.currency}}
             ]
             response = self._request(
                 "PUT",

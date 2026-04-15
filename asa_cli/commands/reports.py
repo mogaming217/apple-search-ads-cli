@@ -9,7 +9,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ..api import SearchAdsClient
-from ..config import CampaignType, get_current_app_config, is_multi_app, load_credentials, parse_campaign_name
+from ..config import CampaignType, format_money, get_current_app_config, is_multi_app, load_credentials, parse_campaign_name
 
 app = typer.Typer(help="Reporting and analytics commands")
 console = Console()
@@ -20,9 +20,9 @@ def parse_date(date_str: str) -> datetime:
     return datetime.strptime(date_str, "%Y-%m-%d")
 
 
-def format_currency(amount: float, currency: str = "USD") -> str:
-    """Format currency for display."""
-    return f"${amount:,.2f}"
+def format_currency(amount: float, currency: Optional[str] = None) -> str:
+    """Format currency for display using the org's configured currency."""
+    return format_money(amount, currency)
 
 
 def format_number(num: float) -> str:

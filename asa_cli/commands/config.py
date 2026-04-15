@@ -9,6 +9,7 @@ from rich.table import Table
 from ..config import (
     CONFIG_FILE,
     CREDENTIALS_FILE,
+    format_money,
     get_active_app_config,
     get_app_slug,
     load_app_config,
@@ -117,8 +118,8 @@ def show_config():
         table.add_row("App Name", app_config.app_name)
         table.add_row("App ID", str(app_config.app_id))
         table.add_row("Countries", ", ".join(app_config.default_countries))
-        table.add_row("Default Bid", f"${app_config.default_bid}")
-        table.add_row("CPA Goal", f"${app_config.default_cpa_goal}" if app_config.default_cpa_goal else "Not set")
+        table.add_row("Default Bid", format_money(app_config.default_bid))
+        table.add_row("CPA Goal", format_money(app_config.default_cpa_goal) if app_config.default_cpa_goal else "Not set")
         table.add_row("Config File", str(CONFIG_FILE))
 
         console.print(table)
@@ -216,7 +217,7 @@ def list_apps():
             app_config.app_name,
             str(app_config.app_id),
             ", ".join(app_config.default_countries),
-            f"${app_config.default_bid}",
+            format_money(app_config.default_bid),
             active_marker,
         )
 
