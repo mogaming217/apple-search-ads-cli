@@ -10,14 +10,16 @@
 
 ## 現在のピン
 
-- タグ: `pinned-2026-04-15-jpy`
-- SHA: `0ec9995`（fork 側 JPY 対応パッチ適用済み）
+- タグ: `pinned-2026-04-22-multi-org`
+- SHA: `f253ef2`（fork 側 JPY + multi-org + budget order 対応パッチ適用済み）
 
 ### インストール
 
 ```bash
-uv tool install "git+https://github.com/mogaming217/apple-search-ads-cli.git@0ec9995"
+uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-search-ads-cli.git@f253ef2"
 ```
+
+> `--no-cache` 必須。uv のビルドキャッシュが効くと古い版が入ったままになる現象を確認（2026-04-22）。
 
 ### 過去のピン
 
@@ -25,6 +27,7 @@ uv tool install "git+https://github.com/mogaming217/apple-search-ads-cli.git@0ec
 | --- | --- | --- |
 | `pinned-2026-04-15` | `db483db` | upstream `main` 時点の HEAD（2026-02-24）|
 | `pinned-2026-04-15-jpy` | `0ec9995` | 上記 + 非 USD 組織対応パッチ |
+| `pinned-2026-04-22-multi-org` | `f253ef2` | 上記 + ASA_CREDENTIALS_FILE env 対応 + Budget Order ID (campaign group) 指定対応 |
 
 ## 初回監査ログ（2026-04-15, SHA db483db）
 
@@ -90,6 +93,26 @@ upstream は `currency: "USD"` をハードコードしており、JPY など US
 - `--bid` / `--budget` のヘルプ文言を `(USD)` → `(in org currency)` に変更
 
 JPY 組織で使う場合は `credentials.json` に `"currency": "JPY"` を追記するだけ。
+
+### Multi-Org 並行運用 + Budget Order 指定（2026-04-22, SHA `f253ef2`）
+
+同一マシンで複数 Apple Ads Org を並行で運用するケース（例: 個人 Org と法人 Org）と、Basic → Advanced 切替等で campaign 作成時に Budget Order / Campaign Group 指定が必要なケースへの対応。
+
+- `asa_cli/config.py`: `CREDENTIALS_FILE` を `_resolve_credentials_file()` で解決し、環境変数 `ASA_CREDENTIALS_FILE` で上書き可能に（未指定時は従来通り `~/.asa-cli/credentials.json`）
+- `asa_cli/api.py`: `create_campaign` に `budget_order_ids: Optional[list[int]]` 引数を追加。指定時のみ payload に `"budgetOrders": [...]` を含める
+- `asa_cli/commands/campaigns.py`: `campaigns create` に `--budget-order-id / -g` オプションを追加
+
+使用例:
+```bash
+# 法人 Org に切り替えて furikan を操作
+env ASA_CREDENTIALS_FILE=~/.asa-cli/credentials-makasete.json \
+    asa --app furikan campaigns list --all
+
+# Budget Order ID 指定で campaign 作成（必要な Org のみ）
+asa campaigns create "MyCampaign" -b 500 -c JP -g 21450441
+```
+
+credentials ファイルは Org ごとに別名で保存する運用（例: `credentials-makasete.json`、`credentials-recipitta.json`）。秘密鍵・公開鍵も Org ごとに別ファイル（例: `private-key-makasete.pem`）に分離し、`credentials.json` 内の `private_key_path` で参照する。
 
 ## 運用上の追加推奨
 
