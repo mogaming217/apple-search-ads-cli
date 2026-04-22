@@ -11,12 +11,12 @@
 ## 現在のピン
 
 - タグ: `pinned-2026-04-22-multi-org`
-- SHA: `f253ef2`（fork 側 JPY + multi-org + budget order 対応パッチ適用済み）
+- SHA: `a57d95a`（fork 側 JPY + multi-org + budget order 対応パッチ適用済み、Codex レビュー反映版）
 
 ### インストール
 
 ```bash
-uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-search-ads-cli.git@f253ef2"
+uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-search-ads-cli.git@a57d95a"
 ```
 
 > `--no-cache` 必須。uv のビルドキャッシュが効くと古い版が入ったままになる現象を確認（2026-04-22）。
@@ -27,7 +27,7 @@ uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-sea
 | --- | --- | --- |
 | `pinned-2026-04-15` | `db483db` | upstream `main` 時点の HEAD（2026-02-24）|
 | `pinned-2026-04-15-jpy` | `0ec9995` | 上記 + 非 USD 組織対応パッチ |
-| `pinned-2026-04-22-multi-org` | `f253ef2` | 上記 + ASA_CREDENTIALS_FILE env 対応 + Budget Order ID (campaign group) 指定対応 |
+| `pinned-2026-04-22-multi-org` | `a57d95a` | 上記 + ASA_CREDENTIALS_FILE env 対応 + Budget Order ID 指定対応（Codex レビュー反映版） |
 
 ## 初回監査ログ（2026-04-15, SHA db483db）
 
@@ -94,7 +94,7 @@ upstream は `currency: "USD"` をハードコードしており、JPY など US
 
 JPY 組織で使う場合は `credentials.json` に `"currency": "JPY"` を追記するだけ。
 
-### Multi-Org 並行運用 + Budget Order 指定（2026-04-22, SHA `f253ef2`）
+### Multi-Org 並行運用 + Budget Order 指定（2026-04-22, SHA `a57d95a`）
 
 同一マシンで複数 Apple Ads Org を並行で運用するケース（例: 個人 Org と法人 Org）と、Basic → Advanced 切替等で campaign 作成時に Budget Order / Campaign Group 指定が必要なケースへの対応。
 
