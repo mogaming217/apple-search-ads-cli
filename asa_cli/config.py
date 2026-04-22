@@ -15,7 +15,21 @@ console = Console()
 
 CONFIG_DIR = Path.home() / ".asa-cli"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-CREDENTIALS_FILE = CONFIG_DIR / "credentials.json"
+
+
+def _resolve_credentials_file() -> Path:
+    """Return the credentials file path, honouring ASA_CREDENTIALS_FILE env var.
+
+    Per-org (multi-org) 運用では環境変数でファイルを切り替える。未指定なら
+    従来通り ~/.asa-cli/credentials.json を使う。
+    """
+    override = os.environ.get("ASA_CREDENTIALS_FILE")
+    if override:
+        return Path(os.path.expanduser(override))
+    return CONFIG_DIR / "credentials.json"
+
+
+CREDENTIALS_FILE = _resolve_credentials_file()
 
 
 class CampaignType(str, Enum):
