@@ -15,7 +15,18 @@ console = Console()
 
 CONFIG_DIR = Path.home() / ".asa-cli"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-CREDENTIALS_FILE = CONFIG_DIR / "credentials.json"
+
+
+def get_credentials_file() -> Path:
+    """Return the credentials file path, honouring ASA_CREDENTIALS_FILE env var.
+
+    環境変数は呼び出しのたびに解決する（プロセス内で差し替わる／テストで差し替える等
+    のケースに追従させるため）。未指定なら従来通り `~/.asa-cli/credentials.json`。
+    """
+    override = os.environ.get("ASA_CREDENTIALS_FILE")
+    if override:
+        return Path(os.path.expanduser(override))
+    return CONFIG_DIR / "credentials.json"
 
 
 class CampaignType(str, Enum):
@@ -197,10 +208,11 @@ def ensure_config_dir() -> None:
 
 def load_credentials() -> Optional[Credentials]:
     """Load credentials from config file."""
-    if not CREDENTIALS_FILE.exists():
+    credentials_file = get_credentials_file()
+    if not credentials_file.exists():
         return None
     try:
-        with open(CREDENTIALS_FILE) as f:
+        with open(credentials_file) as f:
             data = json.load(f)
         return Credentials(**data)
     except (json.JSONDecodeError, ValueError) as e:
@@ -210,11 +222,14 @@ def load_credentials() -> Optional[Credentials]:
 
 def save_credentials(credentials: Credentials) -> None:
     """Save credentials to config file."""
-    ensure_config_dir()
-    with open(CREDENTIALS_FILE, "w") as f:
+    credentials_file = get_credentials_file()
+    # ASA_CREDENTIALS_FILE で ~/.asa-cli 以外を指している可能性があるため、
+    # 親ディレクトリを個別に作成する。
+    credentials_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(credentials_file, "w") as f:
         json.dump(credentials.model_dump(), f, indent=2)
-    os.chmod(CREDENTIALS_FILE, 0o600)  # Restrict permissions
-    console.print(f"[green]Credentials saved to {CREDENTIALS_FILE}[/green]")
+    os.chmod(credentials_file, 0o600)  # Restrict permissions
+    console.print(f"[green]Credentials saved to {credentials_file}[/green]")
 
 
 # ---------------------------------------------------------------------------

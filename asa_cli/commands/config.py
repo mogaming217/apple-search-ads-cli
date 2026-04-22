@@ -8,10 +8,10 @@ from rich.table import Table
 
 from ..config import (
     CONFIG_FILE,
-    CREDENTIALS_FILE,
     format_money,
     get_active_app_config,
     get_app_slug,
+    get_credentials_file,
     load_app_config,
     load_credentials,
     load_multi_app_config,
@@ -102,7 +102,7 @@ def show_config():
         table.add_row("Team ID", credentials.team_id)
         table.add_row("Key ID", credentials.key_id)
         table.add_row("Private Key", credentials.private_key_path)
-        table.add_row("Config File", str(CREDENTIALS_FILE))
+        table.add_row("Config File", str(get_credentials_file()))
 
         console.print(table)
     else:

@@ -188,8 +188,8 @@ class TestCredentials:
                 private_key_path="/path/to/key.pem",
             )
 
-            # Save
-            with patch("asa_cli.config.CREDENTIALS_FILE", creds_file):
+            # Save — path は ASA_CREDENTIALS_FILE env で指示（get_credentials_file が毎回解決する）
+            with patch.dict("os.environ", {"ASA_CREDENTIALS_FILE": str(creds_file)}):
                 with patch("asa_cli.config.CONFIG_DIR", config_dir):
                     save_credentials(creds)
 
@@ -197,7 +197,7 @@ class TestCredentials:
             assert creds_file.exists()
 
             # Load
-            with patch("asa_cli.config.CREDENTIALS_FILE", creds_file):
+            with patch.dict("os.environ", {"ASA_CREDENTIALS_FILE": str(creds_file)}):
                 loaded = load_credentials()
 
             assert loaded is not None
