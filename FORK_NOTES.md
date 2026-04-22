@@ -116,7 +116,7 @@ asa campaigns create "MyCampaign" -b 500 -c JP -g 21450441
 **credentials 書き込み先に関する注意**（2026-04-15 初回監査時の「書き込み先は `~/.asa-cli/credentials.json` のみ」という記述は、env override 使用時は成立しない）:
 - `ASA_CREDENTIALS_FILE` で指定したパスが、読み取り/書き込み両方の対象になる
 - 推奨は **絶対 path**（例: `/Users/.../credentials-makasete.json`）か、`~/.asa-cli/` 配下への相対配置
-- 親ディレクトリが存在しなくても `save_credentials()` は 0o700 相当でディレクトリを作るが、共有 path（`/tmp` や他ユーザーから読める場所）は避ける
+- 親ディレクトリが存在しなくても `save_credentials()` はディレクトリを自動作成する。ただし作成時のパーミッションは**実行環境の `umask` に依存**する（`mkdir(parents=True, exist_ok=True)` のみ）ため、他ユーザーから読める場所（`/tmp` など）は避ける。credentials ファイル本体は常に 0o600 で書き出す
 
 credentials ファイルは Org ごとに別名で保存する運用（例: `credentials-makasete.json`、`credentials-recipitta.json`）。秘密鍵・公開鍵も Org ごとに別ファイル（例: `private-key-makasete.pem`）に分離し、`credentials.json` 内の `private_key_path` で参照する。
 
