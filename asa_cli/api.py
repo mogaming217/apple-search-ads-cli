@@ -261,7 +261,7 @@ class SearchAdsClient:
                 "adChannelType": "SEARCH",
                 "billingEvent": "TAPS",
             }
-            if budget_order_ids:
+            if budget_order_ids is not None:
                 campaign_data["budgetOrders"] = budget_order_ids
 
             response = self._request("POST", "/campaigns", data=campaign_data)

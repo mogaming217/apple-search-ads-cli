@@ -13,6 +13,7 @@ from ..config import (
     CAMPAIGN_STRUCTURE,
     CampaignType,
     detect_campaign_type,
+    format_money,
     get_campaign_name,
     get_current_app_config,
     is_multi_app,
@@ -435,14 +436,14 @@ def enable_campaign(
 @app.command("create")
 def create_campaign(
     name: str = typer.Argument(..., help="Campaign name"),
-    budget: float = typer.Option(50.0, "--budget", "-b", help="Daily budget (USD)"),
+    budget: float = typer.Option(50.0, "--budget", "-b", help="Daily budget (in org currency)"),
     countries: str = typer.Option("US", "--countries", "-c", help="Comma-separated country codes"),
     status: str = typer.Option("ENABLED", "--status", "-s", help="Initial status (ENABLED or PAUSED)"),
     budget_order_id: Optional[int] = typer.Option(
         None,
         "--budget-order-id",
         "-g",
-        help="Budget Order / Campaign Group ID (required for Advanced accounts upgraded from Basic)",
+        help="Budget Order / Campaign Group ID (required for accounts upgraded from Basic / LOC billing)",
     ),
 ):
     """Create a new campaign with custom settings."""
@@ -457,6 +458,10 @@ def create_campaign(
         console.print("[red]No app config. Run 'asa config setup' first.[/red]")
         raise typer.Exit(1)
 
+    if budget_order_id is not None and budget_order_id <= 0:
+        console.print("[red]--budget-order-id must be a positive integer.[/red]")
+        raise typer.Exit(1)
+
     country_list = [c.strip().upper() for c in countries.split(",")]
     status_upper = status.upper()
     if status_upper not in ("ENABLED", "PAUSED"):
@@ -466,10 +471,10 @@ def create_campaign(
     client = SearchAdsClient(credentials)
 
     console.print(f"\nCreating campaign: [cyan]{name}[/cyan]")
-    console.print(f"  Daily Budget: [cyan]${budget}[/cyan]")
+    console.print(f"  Daily Budget: [cyan]{format_money(budget, credentials.currency)}[/cyan]")
     console.print(f"  Countries: [cyan]{', '.join(country_list)}[/cyan]")
     console.print(f"  Status: [cyan]{status_upper}[/cyan]")
-    if budget_order_id:
+    if budget_order_id is not None:
         console.print(f"  Budget Order ID: [cyan]{budget_order_id}[/cyan]")
 
     with console.status("[bold blue]Creating campaign..."):
@@ -479,7 +484,7 @@ def create_campaign(
             daily_budget=budget,
             countries=country_list,
             status=status_upper,
-            budget_order_ids=[budget_order_id] if budget_order_id else None,
+            budget_order_ids=[budget_order_id] if budget_order_id is not None else None,
         )
 
     if campaign:
