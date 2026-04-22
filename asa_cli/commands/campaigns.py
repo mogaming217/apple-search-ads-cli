@@ -438,6 +438,12 @@ def create_campaign(
     budget: float = typer.Option(50.0, "--budget", "-b", help="Daily budget (USD)"),
     countries: str = typer.Option("US", "--countries", "-c", help="Comma-separated country codes"),
     status: str = typer.Option("ENABLED", "--status", "-s", help="Initial status (ENABLED or PAUSED)"),
+    budget_order_id: Optional[int] = typer.Option(
+        None,
+        "--budget-order-id",
+        "-g",
+        help="Budget Order / Campaign Group ID (required for Advanced accounts upgraded from Basic)",
+    ),
 ):
     """Create a new campaign with custom settings."""
     credentials = load_credentials()
@@ -463,6 +469,8 @@ def create_campaign(
     console.print(f"  Daily Budget: [cyan]${budget}[/cyan]")
     console.print(f"  Countries: [cyan]{', '.join(country_list)}[/cyan]")
     console.print(f"  Status: [cyan]{status_upper}[/cyan]")
+    if budget_order_id:
+        console.print(f"  Budget Order ID: [cyan]{budget_order_id}[/cyan]")
 
     with console.status("[bold blue]Creating campaign..."):
         campaign = client.create_campaign(
@@ -471,6 +479,7 @@ def create_campaign(
             daily_budget=budget,
             countries=country_list,
             status=status_upper,
+            budget_order_ids=[budget_order_id] if budget_order_id else None,
         )
 
     if campaign:

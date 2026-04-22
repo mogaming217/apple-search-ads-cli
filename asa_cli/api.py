@@ -238,8 +238,14 @@ class SearchAdsClient:
         countries: list[str],
         daily_budget: Optional[float] = None,
         status: str = "ENABLED",
+        budget_order_ids: Optional[list[int]] = None,
     ) -> Optional[dict[str, Any]]:
-        """Create a new campaign."""
+        """Create a new campaign.
+
+        budget_order_ids: Apple Ads 上で "Campaign Group" / Budget Order と呼ばれる
+        ID を紐付ける。Basic から Advanced に移行したアカウントなど、Org 配下で
+        アプリ単位の campaign group 指定が必須になるケースで必要。
+        """
         if self.app_config is None:
             raise ValueError("No app config. Run 'asa config setup' first.")
 
@@ -255,6 +261,8 @@ class SearchAdsClient:
                 "adChannelType": "SEARCH",
                 "billingEvent": "TAPS",
             }
+            if budget_order_ids:
+                campaign_data["budgetOrders"] = budget_order_ids
 
             response = self._request("POST", "/campaigns", data=campaign_data)
             return response.get("data") if isinstance(response, dict) else None
