@@ -10,13 +10,13 @@
 
 ## 現在のピン
 
-- タグ: `pinned-2026-04-22-multi-org`
-- SHA: `a57d95a`（fork 側 JPY + multi-org + budget order 対応パッチ適用済み、Codex レビュー反映版）
+- タグ: `pinned-2026-05-10-direct-keyword`
+- SHA: `ed3c327`（fork 側 JPY + multi-org + budget order + `keywords add` direct mode 対応、Codex レビュー反映版）
 
 ### インストール
 
 ```bash
-uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-search-ads-cli.git@a57d95a"
+uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-search-ads-cli.git@pinned-2026-05-10-direct-keyword"
 ```
 
 > `--no-cache` 必須。uv のビルドキャッシュが効くと古い版が入ったままになる現象を確認（2026-04-22）。
@@ -28,6 +28,7 @@ uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-sea
 | `pinned-2026-04-15` | `db483db` | upstream `main` 時点の HEAD（2026-02-24）|
 | `pinned-2026-04-15-jpy` | `0ec9995` | 上記 + 非 USD 組織対応パッチ |
 | `pinned-2026-04-22-multi-org` | `a57d95a` | 上記 + ASA_CREDENTIALS_FILE env 対応 + Budget Order ID 指定対応（Codex レビュー反映版） |
+| `pinned-2026-05-10-direct-keyword` | `ed3c327` | 上記 + `asa keywords add` に direct mode（`--campaign --ad-group --match`）追加（Codex レビュー反映版、PR #2）|
 
 ## 初回監査ログ（2026-04-15, SHA db483db）
 
@@ -119,6 +120,25 @@ asa campaigns create "MyCampaign" -b 500 -c JP -g 21450441
 - 親ディレクトリが存在しなくても `save_credentials()` はディレクトリを自動作成する。ただし作成時のパーミッションは**実行環境の `umask` に依存**する（`mkdir(parents=True, exist_ok=True)` のみ）ため、他ユーザーから読める場所（`/tmp` など）は避ける。credentials ファイル本体は常に 0o600 で書き出す
 
 credentials ファイルは Org ごとに別名で保存する運用（例: `credentials-makasete.json`、`credentials-recipitta.json`）。秘密鍵・公開鍵も Org ごとに別ファイル（例: `private-key-makasete.pem`）に分離し、`credentials.json` 内の `private_key_path` で参照する。
+
+### `asa keywords add` direct mode（2026-05-10, SHA `ed3c327`, PR #2）
+
+upstream の `asa keywords add` はキャンペーン名に `brand` / `category` / `competitor` / `discovery` のいずれかを含むことを要求する自動ルーティング前提だった。日本語名のキャンペーン（例: 「キーワード」「探索」「競合」）では `--type` ベースの追加ができず、ad group を直接指定して KW を追加する手段がなかった。後方互換のまま 2 モード化で対応:
+
+- **Routing mode（既存・default）**: `--type brand|category|competitor` で対応キャンペーンに EXACT 追加 + Discovery に BROAD/NEGATIVE。挙動変更なし
+- **Direct mode（新規）**: `--campaign <ID> --ad-group <ID>` で type ルーティングをバイパスし、対象 ad group に bulk add
+  - `--match exact|broad`（default `exact`、case-insensitive）
+  - `--bid <N>`（任意、ad group default を使うなら省略）
+  - Discovery への broad / negative 連動追加は行わない（直接指定の意図に反するため）
+  - ガード: `--campaign` と `--ad-group` 両方必須、片方のみはエラー
+- 新規テスト 5 ケース追加（`tests/test_keywords_direct.py`）
+
+使用例:
+```bash
+asa keywords add "新ワード1,新ワード2" --campaign 2143367006 --ad-group 2145315824 --match exact --bid 300
+```
+
+upstream にも有用な機能なので、安定後に upstream PR 検討候補。
 
 ## 運用上の追加推奨
 
