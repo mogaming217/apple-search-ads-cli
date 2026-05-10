@@ -321,6 +321,7 @@ def add_keywords(
         None,
         "--match",
         "-m",
+        case_sensitive=False,
         help="Direct mode: match type (exact or broad). Default: exact",
     ),
     bid: Optional[float] = typer.Option(None, "--bid", "-b", help="Bid amount (in org currency)"),
