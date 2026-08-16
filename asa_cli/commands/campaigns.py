@@ -101,8 +101,9 @@ def list_campaigns(
                     for ag in ad_groups:
                         bid_data = ag.get("defaultBidAmount", {})
                         bid_amount = bid_data.get("amount", "?")
+                        bid_currency = bid_data.get("currency", "")
                         ag_name = ag.get("name", "")[:15]
-                        bids.append(f"{ag_name}: {bid_amount}")
+                        bids.append(f"{ag_name}: {bid_amount} {bid_currency}".rstrip())
                     campaign_bids[cid] = " | ".join(bids)
                 else:
                     campaign_bids[cid] = "-"

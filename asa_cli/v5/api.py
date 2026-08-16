@@ -1406,12 +1406,15 @@ class SearchAdsClient:
         # Fetch campaign reports for spend data
         report_rows = self.get_campaign_report()
         spend_by_campaign: dict[int, float] = {}
+        spend_currency_by_campaign: dict[int, Optional[str]] = {}
         for row in report_rows:
             cid = row.get("metadata", {}).get("campaignId")
             totals = row.get("total", {})
-            spend = float(totals.get("localSpend", {}).get("amount", 0))
+            local_spend = totals.get("localSpend", {}) or {}
+            spend = float(local_spend.get("amount", 0))
             if cid:
                 spend_by_campaign[cid] = spend
+                spend_currency_by_campaign[cid] = local_spend.get("currency")
 
         results: list[dict[str, Any]] = []
         for campaign in campaigns:
@@ -1425,6 +1428,7 @@ class SearchAdsClient:
                 "displayStatus": campaign.get("displayStatus", "UNKNOWN"),
                 "servingStatus": campaign.get("servingStatus", "UNKNOWN"),
                 "totalSpend": spend_by_campaign.get(cid, 0.0),
+                "totalSpendCurrency": spend_currency_by_campaign.get(cid),
             })
 
         return results

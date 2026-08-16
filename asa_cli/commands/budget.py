@@ -164,7 +164,9 @@ def budget_status():
         total_spend = entry.get("totalSpend", 0.0)
         # Prefer the currency Apple returned in this row's payload over the
         # locally-configured default.
-        spend_currency = daily_currency or lifetime_currency or None
+        spend_currency = (
+            entry.get("totalSpendCurrency") or daily_currency or lifetime_currency or None
+        )
         spend_str = format_money(total_spend, spend_currency)
 
         status = entry.get("status", "UNKNOWN")

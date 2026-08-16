@@ -55,12 +55,16 @@ def _display_currency(client: SearchAdsClient) -> Optional[str]:
     """Resolve the org currency from the ACL (authoritative) for display.
 
     Falls back to the locally-configured currency when the ACL lookup fails,
-    since display should not take a report down with it.
+    since display should not take a report down with it. The result (including
+    a failed lookup) is memoized per client so table rendering never issues
+    more than one /acls request.
     """
-    try:
-        return client.get_org_currency()
-    except Exception:
-        return None
+    if not hasattr(client, "_display_currency_cache"):
+        try:
+            client._display_currency_cache = client.get_org_currency()
+        except Exception:
+            client._display_currency_cache = None
+    return client._display_currency_cache
 
 
 def format_number(num: float) -> str:
