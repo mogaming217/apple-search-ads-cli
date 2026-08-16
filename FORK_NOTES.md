@@ -10,6 +10,12 @@
 
 ## 現在のピン
 
+- タグ: `pinned-2026-08-17-kw-research`
+- 内容: 下記 platform-v1 ピンに `asa workflows keywords`（pop / genres / sugg、キーワードリサーチ）を追加
+- 追加は fork 独自機能（workflows 配下、read-only、in-process で Platform API v1 を呼ぶ）。詳細は `asa workflows keywords --help`
+
+### 過去のピン: pinned-2026-08-16-platform-v1
+
 - タグ: `pinned-2026-08-16-platform-v1`
 - 内容: upstream/main（`064d7b5`、Apple Ads Platform API v1 全面対応・Apple 公式 SDK `apple-ads-platform==1.109.0` ラップ）を取り込み + fork 独自パッチ再ポート（multi-org / budget order / direct mode / 表示通貨）+ Codex レビュー 2 巡反映版
 - **旧コマンドは `asa v5` プレフィックス配下に移動**（例: `asa v5 reports keywords ...`）。Platform API v1 リソース（`asa insights search-term-popularity` 等）がトップレベル
@@ -18,7 +24,7 @@
 ### インストール
 
 ```bash
-uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-search-ads-cli.git@pinned-2026-08-16-platform-v1"
+uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-search-ads-cli.git@pinned-2026-08-17-kw-research"
 ```
 
 > `--no-cache` 必須。uv のビルドキャッシュが効くと古い版が入ったままになる現象を確認（2026-04-22）。

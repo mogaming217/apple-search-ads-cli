@@ -67,13 +67,16 @@ def test_generated_v5_reference_contains_each_public_command_once():
     assert set(headings) == {command.path for command in commands}
 
 
-def test_workflow_inventory_contains_the_three_registered_read_only_commands_once():
+def test_workflow_inventory_contains_the_registered_read_only_commands_once():
     commands = workflow_commands()
     paths = [command.path for command in commands]
     assert paths == [
         "asa workflows campaigns audit",
         "asa workflows campaigns plan-four-structure",
         "asa workflows campaigns plan-maximize-conversions",
+        "asa workflows keywords genres",
+        "asa workflows keywords pop",
+        "asa workflows keywords sugg",
     ]
 
     reference = (ROOT / "references" / "workflow-command-index.md").read_text()

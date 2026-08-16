@@ -2,7 +2,7 @@
 
 import typer
 
-from . import campaigns
+from . import campaigns, keywords
 
 app = typer.Typer(
     name="workflows",
@@ -10,3 +10,4 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(campaigns.app, name="campaigns", help="Campaign planning and auditing")
+app.add_typer(keywords.app, name="keywords", help="Keyword research (popularity and suggestions)")
