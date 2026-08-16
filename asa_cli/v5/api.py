@@ -290,6 +290,7 @@ class SearchAdsClient:
         supply_sources: Optional[list[str]] = None,
         ad_channel_type: str = "SEARCH",
         billing_event: str = "TAPS",
+        budget_order_ids: Optional[list[int]] = None,
     ) -> Optional[dict[str, Any]]:
         """Create a new campaign.
 
@@ -297,6 +298,10 @@ class SearchAdsClient:
         lifetime budgets on 2026-06-16, so prefer leaving ``budget`` unset
         and relying on ``daily_budget`` alone. After 2026-06-16 Apple will
         reject campaigns with only a lifetime budget.
+
+        ``budget_order_ids`` links the campaign to Apple Ads Budget Orders
+        ("Campaign Groups"). Required for orgs where campaigns must belong
+        to a budget order (e.g. accounts upgraded from Basic / LOC billing).
         """
         if self.app_config is None:
             raise ValueError("No app config. Run 'asa config setup' first.")
@@ -317,6 +322,8 @@ class SearchAdsClient:
             }
             if budget is not None:
                 campaign_data["budgetAmount"] = {"amount": str(budget), "currency": currency}
+            if budget_order_ids is not None:
+                campaign_data["budgetOrders"] = budget_order_ids
 
             response = self._request("POST", "/campaigns", data=campaign_data)
             return response.get("data") if isinstance(response, dict) else None

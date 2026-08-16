@@ -455,6 +455,12 @@ def create_campaign(
     budget: float = typer.Option(50.0, "--budget", "-b", help="Daily budget (organization currency)"),
     countries: str = typer.Option("US", "--countries", "-c", help="Comma-separated country codes"),
     status: str = typer.Option("ENABLED", "--status", "-s", help="Initial status (ENABLED or PAUSED)"),
+    budget_order_id: Optional[int] = typer.Option(
+        None,
+        "--budget-order-id",
+        "-g",
+        help="Budget Order / Campaign Group ID (required for accounts upgraded from Basic / LOC billing)",
+    ),
 ):
     """Create a new campaign with custom settings."""
     credentials = load_credentials()
@@ -466,6 +472,10 @@ def create_campaign(
 
     if not app_config:
         console.print("[red]No app config. Run 'asa config setup' first.[/red]")
+        raise typer.Exit(1)
+
+    if budget_order_id is not None and budget_order_id <= 0:
+        console.print("[red]--budget-order-id must be a positive integer.[/red]")
         raise typer.Exit(1)
 
     country_list = [c.strip().upper() for c in countries.split(",")]
@@ -481,6 +491,8 @@ def create_campaign(
     console.print(f"  Daily Budget: [cyan]{budget} {currency}[/cyan]")
     console.print(f"  Countries: [cyan]{', '.join(country_list)}[/cyan]")
     console.print(f"  Status: [cyan]{status_upper}[/cyan]")
+    if budget_order_id is not None:
+        console.print(f"  Budget Order ID: [cyan]{budget_order_id}[/cyan]")
 
     with console.status("[bold blue]Creating campaign..."):
         campaign = client.create_campaign(
@@ -489,6 +501,7 @@ def create_campaign(
             daily_budget=budget,
             countries=country_list,
             status=status_upper,
+            budget_order_ids=[budget_order_id] if budget_order_id is not None else None,
         )
 
     if campaign:
