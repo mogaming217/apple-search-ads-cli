@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from ..config import detect_campaign_type, get_current_app_config, is_multi_app, load_credentials
+from ..config import detect_campaign_type, format_money, get_current_app_config, is_multi_app, load_credentials
 from ..v5.api import SearchAdsClient
 
 app = typer.Typer(help="Budget management commands")
@@ -60,7 +60,7 @@ def list_budget_orders():
             str(bo.get("id", "")),
             bo.get("name", ""),
             str(bo.get("orderNumber", "")),
-            f"${amount} {currency}",
+            f"{amount} {currency}",
             bo.get("startDate", ""),
             bo.get("endDate", ""),
             f"[{status_style}]{status}[/{status_style}]",
@@ -96,7 +96,7 @@ def get_budget_order(
     console.print(Panel(f"[bold]Budget Order: {bo.get('name', '')}[/bold]", expand=False))
     console.print(f"  ID:           [cyan]{bo.get('id', '')}[/cyan]")
     console.print(f"  Order Number: [cyan]{bo.get('orderNumber', '')}[/cyan]")
-    console.print(f"  Budget:       [cyan]${amount} {currency}[/cyan]")
+    console.print(f"  Budget:       [cyan]{amount} {currency}[/cyan]")
     console.print(f"  Start Date:   [cyan]{bo.get('startDate', '')}[/cyan]")
     console.print(f"  End Date:     [cyan]{bo.get('endDate', '')}[/cyan]")
     console.print(f"  Status:       [cyan]{bo.get('status', '')}[/cyan]")
@@ -148,15 +148,15 @@ def budget_status():
         daily = entry.get("dailyBudgetAmount") or {}
         daily_amount = daily.get("amount", "-")
         daily_currency = daily.get("currency", "")
-        daily_str = f"${daily_amount} {daily_currency}".strip() if daily_amount != "-" else "[dim]-[/dim]"
+        daily_str = f"{daily_amount} {daily_currency}".strip() if daily_amount != "-" else "[dim]-[/dim]"
 
         lifetime = entry.get("budgetAmount") or {}
         lifetime_amount = lifetime.get("amount", "-")
         lifetime_currency = lifetime.get("currency", "")
-        lifetime_str = f"${lifetime_amount} {lifetime_currency}".strip() if lifetime_amount != "-" else "[dim]-[/dim]"
+        lifetime_str = f"{lifetime_amount} {lifetime_currency}".strip() if lifetime_amount != "-" else "[dim]-[/dim]"
 
         total_spend = entry.get("totalSpend", 0.0)
-        spend_str = f"${total_spend:,.2f}"
+        spend_str = format_money(total_spend)
 
         status = entry.get("status", "UNKNOWN")
         display_status = entry.get("displayStatus", "UNKNOWN")

@@ -205,7 +205,7 @@ def list_keywords(
 
         for kw in keywords:
             bid = kw.get("bidAmount", {})
-            bid_str = f"${bid.get('amount', '?')}" if bid else "-"
+            bid_str = f"{bid.get('amount', '?')} {bid.get('currency', '')}".strip() if bid else "-"
             table.add_row(
                 str(kw.get("id")),
                 kw.get("text", ""),
@@ -933,7 +933,7 @@ def pause_keyword_cmd(
 
         for idx, kw in enumerate(active_keywords, 1):
             current_bid = kw.get("bidAmount", {})
-            bid_str = f"${current_bid.get('amount', '?')}" if current_bid else "-"
+            bid_str = f"{current_bid.get('amount', '?')} {current_bid.get('currency', '')}".strip() if current_bid else "-"
             table.add_row(str(idx), kw.get("text", ""), bid_str)
 
         console.print(table)
@@ -1017,7 +1017,7 @@ def enable_keyword_cmd(
 
         for idx, kw in enumerate(paused_keywords, 1):
             current_bid = kw.get("bidAmount", {})
-            bid_str = f"${current_bid.get('amount', '?')}" if current_bid else "-"
+            bid_str = f"{current_bid.get('amount', '?')} {current_bid.get('currency', '')}".strip() if current_bid else "-"
             table.add_row(str(idx), kw.get("text", ""), bid_str)
 
         console.print(table)
@@ -1124,7 +1124,7 @@ def research(
     for item in recommendations[:limit]:
         keyword = item.get("keyword") or item.get("text") or item.get("id", "?")
         bid = item.get("bidAmount", {})
-        bid_str = f"${bid.get('amount', '-')}" if isinstance(bid, dict) else str(bid) if bid else "-"
+        bid_str = f"{bid.get('amount', '-')} {bid.get('currency', '')}".strip() if isinstance(bid, dict) else str(bid) if bid else "-"
         popularity = item.get("searchPopularity", item.get("popularity", "-"))
         table.add_row(str(keyword), bid_str, str(popularity))
         shown += 1
@@ -1292,7 +1292,7 @@ def find_keywords(
 
     for kw in keywords:
         bid = kw.get("bidAmount", {})
-        bid_str = f"${bid.get('amount', '?')}" if bid else "-"
+        bid_str = f"{bid.get('amount', '?')} {bid.get('currency', '')}".strip() if bid else "-"
         table.add_row(
             str(kw.get("id")),
             kw.get("text", ""),

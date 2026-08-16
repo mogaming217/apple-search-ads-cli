@@ -126,7 +126,7 @@ def list_campaigns(
         ctype_str = ctype.value if ctype else "-"
         status = campaign.get("displayStatus", campaign.get("status", "UNKNOWN"))
         daily_budget = campaign.get("dailyBudgetAmount", {})
-        budget_str = f"${daily_budget.get('amount', '?')} {daily_budget.get('currency', '')}"
+        budget_str = f"{daily_budget.get('amount', '?')} {daily_budget.get('currency', '')}"
 
         # Lifetime budget — flag campaigns that silently stopped serving
         # because they hit their lifetime cap. Apple is discontinuing

@@ -11,6 +11,7 @@ from rich.table import Table
 
 from ..config import (
     CampaignType,
+    format_money,
     get_current_app_config,
     is_multi_app,
     load_credentials,
@@ -45,9 +46,9 @@ def _print_json(payload: dict) -> None:
     typer.echo(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
 
 
-def format_currency(amount: float, currency: str = "USD") -> str:
-    """Format currency for display."""
-    return f"${amount:,.2f}"
+def format_currency(amount: float, currency: Optional[str] = None) -> str:
+    """Format currency for display using the org currency."""
+    return format_money(amount, currency)
 
 
 def format_number(num: float) -> str:

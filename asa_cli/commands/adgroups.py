@@ -53,7 +53,7 @@ def list_adgroups(
         status = ag.get("displayStatus", ag.get("status", "UNKNOWN"))
         status_style = "green" if status == "RUNNING" else "yellow" if status == "PAUSED" else "red"
         default_bid = ag.get("defaultBidAmount", {})
-        bid_str = f"${default_bid.get('amount', '?')} {default_bid.get('currency', '')}"
+        bid_str = f"{default_bid.get('amount', '?')} {default_bid.get('currency', '')}"
         search_match = "[green]ON[/green]" if ag.get("automatedKeywordsOptIn", False) else "[dim]OFF[/dim]"
 
         table.add_row(
