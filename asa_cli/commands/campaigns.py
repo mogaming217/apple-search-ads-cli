@@ -102,7 +102,7 @@ def list_campaigns(
                         bid_data = ag.get("defaultBidAmount", {})
                         bid_amount = bid_data.get("amount", "?")
                         ag_name = ag.get("name", "")[:15]
-                        bids.append(f"{ag_name}: ${bid_amount}")
+                        bids.append(f"{ag_name}: {bid_amount}")
                     campaign_bids[cid] = " | ".join(bids)
                 else:
                     campaign_bids[cid] = "-"
@@ -137,10 +137,13 @@ def list_campaigns(
         user_status = campaign.get("status", "")
         if lt_amt is None:
             lt_str = "[dim]—[/dim]"
-        elif user_status == "ENABLED" and serving != "RUNNING":
-            lt_str = f"[red]${lt_amt} CAPPED[/red]"
         else:
-            lt_str = f"[yellow]${lt_amt}[/yellow]"
+            lt_cur = lt.get("currency", "") if isinstance(lt, dict) else ""
+            lt_display = f"{lt_amt} {lt_cur}".strip()
+            if user_status == "ENABLED" and serving != "RUNNING":
+                lt_str = f"[red]{lt_display} CAPPED[/red]"
+            else:
+                lt_str = f"[yellow]{lt_display}[/yellow]"
 
         countries = ", ".join(campaign.get("countriesOrRegions", []))
 

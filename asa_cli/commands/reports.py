@@ -51,6 +51,18 @@ def format_currency(amount: float, currency: Optional[str] = None) -> str:
     return format_money(amount, currency)
 
 
+def _display_currency(client: SearchAdsClient) -> Optional[str]:
+    """Resolve the org currency from the ACL (authoritative) for display.
+
+    Falls back to the locally-configured currency when the ACL lookup fails,
+    since display should not take a report down with it.
+    """
+    try:
+        return client.get_org_currency()
+    except Exception:
+        return None
+
+
 def format_number(num: float) -> str:
     """Format number with commas."""
     if num >= 1000:
@@ -217,8 +229,8 @@ def report_summary(
             f"{ttr:.2f}%",
             format_number(installs),
             f"{cvr:.2f}%",
-            format_currency(spend),
-            format_currency(cpa) if installs > 0 else "-",
+            format_currency(spend, _display_currency(client)),
+            format_currency(cpa, _display_currency(client)) if installs > 0 else "-",
         )
 
         # Accumulate totals
@@ -242,8 +254,8 @@ def report_summary(
         f"[bold]{total_ttr:.2f}%[/bold]",
         f"[bold]{format_number(totals['installs'])}[/bold]",
         f"[bold]{total_cvr:.2f}%[/bold]",
-        f"[bold]{format_currency(totals['spend'])}[/bold]",
-        f"[bold]{format_currency(total_cpa)}[/bold]" if totals["installs"] > 0 else "-",
+        f"[bold]{format_currency(totals['spend'], _display_currency(client))}[/bold]",
+        f"[bold]{format_currency(total_cpa, _display_currency(client))}[/bold]" if totals["installs"] > 0 else "-",
     )
 
     if json_output:
@@ -440,7 +452,7 @@ def report_keywords(
     table.add_column("CPA", justify="right")
 
     for kw in keywords:
-        cpa_str = format_currency(kw["cpa"]) if kw["cpa"] is not None else "-"
+        cpa_str = format_currency(kw["cpa"], _display_currency(client)) if kw["cpa"] is not None else "-"
         table.add_row(
             (kw["keyword"] or "?")[:30],
             (kw["match_type"] or "?")[:5],
@@ -451,7 +463,7 @@ def report_keywords(
             f"{kw['conversion_rate'] * 100:.1f}%"
             if kw["conversion_rate"] is not None
             else "-",
-            format_currency(kw["spend"]),
+            format_currency(kw["spend"], _display_currency(client)),
             cpa_str,
         )
 
@@ -589,8 +601,8 @@ def report_adgroups(
                 f"{ttr:.1f}%",
                 format_number(installs),
                 f"{cvr:.1f}%",
-                format_currency(spend),
-                format_currency(cpa) if installs > 0 else "-",
+                format_currency(spend, _display_currency(client)),
+                format_currency(cpa, _display_currency(client)) if installs > 0 else "-",
             )
 
             campaign_totals["impressions"] += impressions
@@ -611,8 +623,8 @@ def report_adgroups(
             f"[bold]{total_ttr:.1f}%[/bold]",
             f"[bold]{format_number(campaign_totals['installs'])}[/bold]",
             f"[bold]{total_cvr:.1f}%[/bold]",
-            f"[bold]{format_currency(campaign_totals['spend'])}[/bold]",
-            f"[bold]{format_currency(total_cpa)}[/bold]" if campaign_totals["installs"] > 0 else "-",
+            f"[bold]{format_currency(campaign_totals['spend'], _display_currency(client))}[/bold]",
+            f"[bold]{format_currency(total_cpa, _display_currency(client))}[/bold]" if campaign_totals["installs"] > 0 else "-",
         )
 
         console.print(table)
@@ -947,7 +959,7 @@ def report_search_terms(
     table.add_column("CPA", justify="right")
 
     for t in terms:
-        cpa_str = format_currency(t["cpa"]) if t["cpa"] is not None else "-"
+        cpa_str = format_currency(t["cpa"], _display_currency(client)) if t["cpa"] is not None else "-"
 
         # Color code based on performance
         if t["installs"] > 0 and t["cpa"] is not None:
@@ -966,7 +978,7 @@ def report_search_terms(
             format_number(t["impressions"]),
             format_number(t["taps"]),
             format_number(t["installs"]),
-            format_currency(t["spend"]),
+            format_currency(t["spend"], _display_currency(client)),
             cpa_str,
         )
 
@@ -1310,8 +1322,8 @@ def report_ads(
                 f"{ttr:.1f}%",
                 format_number(installs),
                 f"{cvr:.1f}%",
-                format_currency(spend),
-                format_currency(cpa) if installs > 0 else "-",
+                format_currency(spend, _display_currency(client)),
+                format_currency(cpa, _display_currency(client)) if installs > 0 else "-",
             )
 
         if not json_output:
@@ -1515,12 +1527,12 @@ def report_bid_recommendations(
                     bid_style = "red"
                     below_suggestion += 1
 
-                diff_str = f"[{bid_style}]{'+' if diff <= 0 else ''}{format_currency(abs(diff))}[/{bid_style}]"
+                diff_str = f"[{bid_style}]{'+' if diff <= 0 else ''}{format_currency(abs(diff), _display_currency(client))}[/{bid_style}]"
                 if diff > 0:
-                    diff_str = f"[{bid_style}]-{format_currency(diff)}[/{bid_style}]"
+                    diff_str = f"[{bid_style}]-{format_currency(diff, _display_currency(client))}[/{bid_style}]"
 
-                current_str = format_currency(r["current_bid"]) if r["current_bid"] > 0 else "-"
-                suggested_str = format_currency(r["suggested_bid"]) if r["suggested_bid"] > 0 else "-"
+                current_str = format_currency(r["current_bid"], _display_currency(client)) if r["current_bid"] > 0 else "-"
+                suggested_str = format_currency(r["suggested_bid"], _display_currency(client)) if r["suggested_bid"] > 0 else "-"
 
                 table.add_row(
                     r["keyword"][:30],

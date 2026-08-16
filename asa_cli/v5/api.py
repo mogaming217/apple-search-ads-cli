@@ -591,7 +591,11 @@ class SearchAdsClient:
         if not keywords:
             return [], []
 
-        default_bid = bid_amount or (self.app_config.default_bid if self.app_config else 1.50)
+        default_bid = (
+            bid_amount
+            if bid_amount is not None
+            else (self.app_config.default_bid if self.app_config else 1.50)
+        )
         currency = self.get_org_currency()
 
         keyword_objects = [

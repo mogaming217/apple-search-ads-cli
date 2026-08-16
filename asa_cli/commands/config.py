@@ -9,7 +9,6 @@ from rich.table import Table
 from ..config import (
     CONFIG_FILE,
     format_money,
-    get_active_app_config,
     get_app_slug,
     get_credentials_file,
     load_app_config,

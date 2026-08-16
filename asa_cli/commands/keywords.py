@@ -251,10 +251,21 @@ def _add_keywords_direct(
     console.print(f"Campaign: [cyan]{campaign.get('name')} ({campaign_id})[/cyan]")
     console.print(f"Ad Group: [cyan]{ad_group.get('name')} ({ad_group_id})[/cyan]")
     console.print(f"Match Type: [cyan]{match_type.value}[/cyan]")
-    if bid is not None:
-        console.print(f"Bid: [cyan]{bid}[/cyan] (org currency)")
+    if bid is None:
+        # The v5 API layer falls back to AppConfig.default_bid when bid_amount
+        # is None, so resolve the ad group default explicitly to honour the
+        # "ad group default" contract shown below.
+        default_bid_data = ad_group.get("defaultBidAmount")
+        if not isinstance(default_bid_data, dict) or default_bid_data.get("amount") is None:
+            console.print(
+                f"[red]Ad group {ad_group_id} has no default bid; pass --bid explicitly.[/red]"
+            )
+            raise typer.Exit(1)
+        effective_bid = float(default_bid_data["amount"])
+        console.print(f"Bid: [cyan]{effective_bid}[/cyan] (ad group default)")
     else:
-        console.print("Bid: [cyan]ad group default[/cyan]")
+        effective_bid = bid
+        console.print(f"Bid: [cyan]{bid}[/cyan] (org currency)")
 
     console.print("\n[dim]Direct mode: no Discovery broad/negative routing.[/dim]")
 
@@ -272,7 +283,7 @@ def _add_keywords_direct(
             ad_group_id=ad_group_id,
             keywords=keyword_list,
             match_type=match_type,
-            bid_amount=bid,
+            bid_amount=effective_bid,
         )
 
     if added:
@@ -282,16 +293,20 @@ def _add_keywords_direct(
                 f"  [dim]- {kw.get('text')} ({kw.get('matchType')}) id={kw.get('id')}[/dim]"
             )
     if errors:
-        all_duplicates = all(e.get("messageCode") == "DUPLICATE_KEYWORD" for e in errors)
-        if all_duplicates and not added:
+        non_duplicate_errors = [
+            e for e in errors if e.get("messageCode") != "DUPLICATE_KEYWORD"
+        ]
+        if not non_duplicate_errors and not added:
             console.print("[dim]All keywords already exist in this ad group.[/dim]")
-        elif all_duplicates:
+        elif not non_duplicate_errors:
             console.print("[dim]Some keywords already existed and were skipped.[/dim]")
         else:
-            for err in errors:
+            for err in non_duplicate_errors:
                 console.print(f"[red]Error: {err.get('message', 'Unknown error')}[/red]")
+            raise typer.Exit(1)
     if not added and not errors:
         console.print("[red]Failed to add keywords (no response data).[/red]")
+        raise typer.Exit(1)
 
 
 @app.command("add")
@@ -345,9 +360,10 @@ def add_keywords(
         )
 
     if not direct_mode and match_type_opt is not None:
-        console.print(
-            "[yellow]--match is only used in direct mode (with --campaign / --ad-group). Ignored.[/yellow]"
-        )
+        # Fail closed: silently falling back to routing mode would mutate
+        # brand/category/competitor + Discovery campaigns the user never named.
+        console.print("[red]--match requires both --campaign and --ad-group (direct mode).[/red]")
+        raise typer.Exit(1)
 
     if not direct_mode and campaign_type is None:
         campaign_type = CampaignType.CATEGORY
