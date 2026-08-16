@@ -10,13 +10,15 @@
 
 ## 現在のピン
 
-- タグ: `pinned-2026-05-10-direct-keyword`
-- SHA: `ed3c327`（fork 側 JPY + multi-org + budget order + `keywords add` direct mode 対応、Codex レビュー反映版）
+- タグ: `pinned-2026-08-16-platform-v1`
+- 内容: upstream/main（`064d7b5`、Apple Ads Platform API v1 全面対応・Apple 公式 SDK `apple-ads-platform==1.109.0` ラップ）を取り込み + fork 独自パッチ再ポート（multi-org / budget order / direct mode / 表示通貨）+ Codex レビュー 2 巡反映版
+- **旧コマンドは `asa v5` プレフィックス配下に移動**（例: `asa v5 reports keywords ...`）。Platform API v1 リソース（`asa insights search-term-popularity` 等）がトップレベル
+- **Python 3.12+ 必須**。依存に Apple 公式 SDK `apple-ads-platform==1.109.0`（PEP 740 attestation 検証済み、下記監査ログ参照）
 
 ### インストール
 
 ```bash
-uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-search-ads-cli.git@pinned-2026-05-10-direct-keyword"
+uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-search-ads-cli.git@pinned-2026-08-16-platform-v1"
 ```
 
 > `--no-cache` 必須。uv のビルドキャッシュが効くと古い版が入ったままになる現象を確認（2026-04-22）。
@@ -53,6 +55,54 @@ uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-sea
 - 認証情報はローカルに留まり、Apple 以外へは送信されない
 - コード自体に不審な挙動は見当たらず、透明性が高い
 - 残存リスクは「上流がアップデートで悪意あるコードを入れた場合」のみ → 本フォーク + SHA ピン留めで緩和
+
+## Platform API v1 取り込み監査ログ（2026-08-16, upstream `064d7b5`）
+
+upstream の大規模刷新（+42,950 行 / 135 ファイル。大半は生成マニフェスト JSON・テスト・生成ドキュメント）を、Claude サブエージェント 4 系統の並列レビュー + Codex レビュー 2 巡で監査してから取り込んだ。
+
+### 1. 手書きコードのセキュリティ監査 — 問題なし
+
+| 項目 | 結果 |
+| --- | --- |
+| 外部通信先 | Apple のみ。v5: `appleid.apple.com` / `api.searchads.apple.com`、v1: 公式 SDK 経由で `api.ads.apple.com`（**新ホスト**）。第三者送信なし |
+| 動的実行 / pickle / subprocess / 生 socket / 難読化 | すべてなし |
+| ファイル書き込み | credentials.json は 0600 明示。config.json は非秘密情報のみ |
+| credential 到達点 | PyJWT の ES256 署名と Apple 公式 SDK builder の 2 箇所のみ。ログ・例外への漏出なし |
+| ビルド | setup.py なし（setuptools.build_meta、install 時の任意コード実行なし） |
+| 軽微な注意 | GitHub Actions がタグ固定（SHA 未固定）/ uv.lock 非コミット（意図的）/ python-dotenv が宣言のみ未使用 / SKILL.md に作者個人パス |
+
+### 2. Apple 公式 SDK `apple-ads-platform==1.109.0` のサプライチェーン検証 — 公式性を暗号学的に確認
+
+- PyPI の PEP 740 attestation が「`apple` org（GitHub org ID 10639145 = Apple 本体）の `apple-ads-platform-api-python` リポジトリ、workflow `publish-pypi.yml`、tag v1.109.0」からの発行であることを証明。`pypi-attestations verify` で wheel/sdist とも OK
+- 配布物と GitHub ソースは**バイト単位で完全一致**（差分はバージョンスタンプのみ）
+- Apple 公式ドキュメント（Client Libraries ページ）がこのリポジトリを公式ライブラリとして明記
+- SDK コード監査: 通信先は `api.ads.apple.com` / `appleid.apple.com` の 2 ドメインのみ。危険パターンなし。build backend は poetry-core（宣言的）
+- **注意: attestation が保証するのは 1.109.0 のみ**。SDK バージョンを上げる際は同じ手順（attestation + ソース照合）で再検証すること
+
+### 3. platform 層の品質レビュー — 良好
+
+- mutation（create/update/delete/apply/dismiss/upload）はデフォルトでプレビューのみ、`--confirm` 必須。read/mutation 境界は HTTP メソッド + パスベースで全 99 操作の誤分類なし
+- SDK response drift フォールバックは fail-closed（既知ミスマッチ 3 条件に全一致した場合のみ受容、パッチ済みコピーで再検証）
+- チェックイン済みマニフェスト JSON は PyPI 配布物から決定論的に再生成できることを実機確認
+- v5 の通貨は `get_org_currency()`（ACL から動的取得・fail-closed）に刷新されており、fork の静的 `currency` フィールド方式の上位互換
+
+### 4. fork 独自パッチの棚卸し
+
+| パッチ | 対応 |
+| --- | --- |
+| 非 USD 組織対応（write 経路） | **廃棄**。upstream の `get_org_currency()` が上位互換 |
+| 非 USD 組織対応（表示） | `format_money` を再適用。表示通貨は ACL 正、失敗時に `credentials.currency` へフォールバック |
+| Multi-Org `ASA_CREDENTIALS_FILE` | **維持**（マージで自動生存）。platform 層も `load_credentials()` 共用のため v1 コマンドにも効く |
+| Budget Order 指定 create | `v5/api.py` + `commands/campaigns.py` に再ポート |
+| keywords add direct mode | `commands/keywords.py` に再ポート + Codex 指摘で強化（bid=0 の falsy バグ修正、bid 省略時の ad group default 明示解決、`--match` 単独指定の fail-closed 化、失敗時 exit 1） |
+
+Codex レビュー（2 巡、いずれも反映済み・最終承認取得）: bid 契約 / fail-closed / 表示通貨 / localSpend 通貨伝播 / ACL キャッシュ / ruff。契約テスト 10 件追加、全 437 テストパス。
+
+### 運用メモ
+
+- Platform API v1 の利用には `~/.asa-cli/credentials.json` への `ad_account_id` 追記が必要（`asa access advertiser-resources` で AD_ACCOUNT の resourceId を確認）。org_id は v1 では使われない
+- `asa config setup` を再実行すると credentials.json の未知フィールド（`currency` 等）が消えるため、フィールド追加は手編集を推奨
+- Campaign Management API v5 は **2027-01-26 廃止**。それまでに PDCA 運用を v1 レポート系へ移行する
 
 ## upstream 更新を取り込む手順
 
