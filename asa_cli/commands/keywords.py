@@ -8,17 +8,15 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from ..api import SearchAdsClient
 from ..config import (
-    CAMPAIGN_STRUCTURE,
     CampaignType,
     MatchType,
     detect_campaign_type,
     get_current_app_config,
     is_multi_app,
     load_credentials,
-    parse_campaign_name,
 )
+from ..v5.api import SearchAdsClient
 
 app = typer.Typer(help="Keyword management commands")
 console = Console()
@@ -207,7 +205,7 @@ def list_keywords(
 
         for kw in keywords:
             bid = kw.get("bidAmount", {})
-            bid_str = f"{bid.get('amount', '?')} {bid.get('currency', '')}" if bid else "-"
+            bid_str = f"${bid.get('amount', '?')}" if bid else "-"
             table.add_row(
                 str(kw.get("id")),
                 kw.get("text", ""),
@@ -222,139 +220,27 @@ def list_keywords(
         console.print(f"\n[dim]Total matching: {total_count} keywords[/dim]")
 
 
-def _add_keywords_direct(
-    client: SearchAdsClient,
-    campaign_id: int,
-    ad_group_id: int,
-    keyword_list: list[str],
-    match_type: MatchType,
-    bid: Optional[float],
-    dry_run: bool,
-    force: bool,
-) -> None:
-    """Add keywords directly to a specific ad group, bypassing type-based routing."""
-    with console.status("[bold blue]Resolving campaign and ad group..."):
-        campaign = client.get_campaign(campaign_id)
-        if not campaign:
-            console.print(f"[red]Campaign {campaign_id} not found.[/red]")
-            raise typer.Exit(1)
-
-        ad_groups = client.get_ad_groups(campaign_id)
-
-    ad_group = next((ag for ag in ad_groups if ag.get("id") == ad_group_id), None)
-    if not ad_group:
-        console.print(
-            f"[red]Ad group {ad_group_id} not found in campaign {campaign_id}.[/red]"
-        )
-        raise typer.Exit(1)
-
-    console.print(Panel(f"[bold]Adding {len(keyword_list)} Keywords (direct)[/bold]", expand=False))
-    console.print(f"\nKeywords: [cyan]{', '.join(keyword_list)}[/cyan]")
-    console.print(f"Campaign: [cyan]{campaign.get('name')} ({campaign_id})[/cyan]")
-    console.print(f"Ad Group: [cyan]{ad_group.get('name')} ({ad_group_id})[/cyan]")
-    console.print(f"Match Type: [cyan]{match_type.value}[/cyan]")
-    if bid is not None:
-        console.print(f"Bid: [cyan]{bid}[/cyan] (org currency)")
-    else:
-        console.print("Bid: [cyan]ad group default[/cyan]")
-
-    console.print("\n[dim]Direct mode: no Discovery broad/negative routing.[/dim]")
-
-    if dry_run:
-        console.print("\n[yellow]Dry run - no changes made.[/yellow]")
-        return
-
-    if not force and not Confirm.ask("\nProceed?"):
-        console.print("[yellow]Cancelled.[/yellow]")
-        return
-
-    with console.status("[bold blue]Adding keywords..."):
-        added, errors = client.add_keywords(
-            campaign_id=campaign_id,
-            ad_group_id=ad_group_id,
-            keywords=keyword_list,
-            match_type=match_type,
-            bid_amount=bid,
-        )
-
-    if added:
-        console.print(f"[green]Added {len(added)} keywords to ad group {ad_group_id}[/green]")
-        for kw in added:
-            console.print(
-                f"  [dim]- {kw.get('text')} ({kw.get('matchType')}) id={kw.get('id')}[/dim]"
-            )
-    if errors:
-        all_duplicates = all(e.get("messageCode") == "DUPLICATE_KEYWORD" for e in errors)
-        if all_duplicates and not added:
-            console.print("[dim]All keywords already exist in this ad group.[/dim]")
-        elif all_duplicates:
-            console.print("[dim]Some keywords already existed and were skipped.[/dim]")
-        else:
-            for err in errors:
-                console.print(f"[red]Error: {err.get('message', 'Unknown error')}[/red]")
-    if not added and not errors:
-        console.print("[red]Failed to add keywords (no response data).[/red]")
-
-
 @app.command("add")
 def add_keywords(
     keywords: str = typer.Argument(..., help="Comma-separated keywords to add"),
-    campaign_type: Optional[CampaignType] = typer.Option(
-        None,
+    campaign_type: CampaignType = typer.Option(
+        CampaignType.CATEGORY,
         "--type",
         "-t",
-        help="Campaign type: brand, category, competitor (default: category in routing mode; ignored in direct mode)",
+        help="Campaign type: brand, category, competitor",
     ),
-    campaign_id: Optional[int] = typer.Option(
-        None,
-        "--campaign",
-        "-c",
-        help="Direct mode: campaign ID to add keywords to (requires --ad-group)",
-    ),
-    ad_group_id: Optional[int] = typer.Option(
-        None,
-        "--ad-group",
-        "-g",
-        help="Direct mode: ad group ID to add keywords to (requires --campaign)",
-    ),
-    match_type_opt: Optional[MatchType] = typer.Option(
-        None,
-        "--match",
-        "-m",
-        case_sensitive=False,
-        help="Direct mode: match type (exact or broad). Default: exact",
-    ),
-    bid: Optional[float] = typer.Option(None, "--bid", "-b", help="Bid amount (in org currency)"),
+    bid: Optional[float] = typer.Option(None, "--bid", "-b", help="Bid amount (organization currency)"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without adding"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
-    """Add keywords to a campaign.
+    """Add keywords to a campaign with automatic routing.
 
-    Two modes:
-    - Routing mode (default): pass --type brand|category|competitor; keywords are
-      added as EXACT to the matching campaign and as BROAD + NEGATIVE to Discovery.
-    - Direct mode: pass --campaign <ID> --ad-group <ID> [--match exact|broad] to
-      add keywords straight into a specific ad group with no Discovery routing.
+    Keywords are added to:
+    - The appropriate exact match campaign (brand/category/competitor)
+    - Discovery campaign (broad match) for mining
+    - Discovery campaign negative keywords (to prevent overlap)
     """
-    direct_mode = ad_group_id is not None or campaign_id is not None
-    if direct_mode and (campaign_id is None or ad_group_id is None):
-        console.print("[red]Direct mode requires both --campaign and --ad-group.[/red]")
-        raise typer.Exit(1)
-
-    if direct_mode and campaign_type is not None:
-        console.print(
-            "[yellow]--type is ignored when --campaign / --ad-group are specified.[/yellow]"
-        )
-
-    if not direct_mode and match_type_opt is not None:
-        console.print(
-            "[yellow]--match is only used in direct mode (with --campaign / --ad-group). Ignored.[/yellow]"
-        )
-
-    if not direct_mode and campaign_type is None:
-        campaign_type = CampaignType.CATEGORY
-
-    if not direct_mode and campaign_type == CampaignType.DISCOVERY:
+    if campaign_type == CampaignType.DISCOVERY:
         console.print("[red]Cannot add keywords directly to Discovery. Use brand/category/competitor.[/red]")
         raise typer.Exit(1)
 
@@ -372,19 +258,6 @@ def add_keywords(
     if not keyword_list:
         console.print("[red]No valid keywords provided.[/red]")
         raise typer.Exit(1)
-
-    if direct_mode:
-        _add_keywords_direct(
-            client=client,
-            campaign_id=campaign_id,
-            ad_group_id=ad_group_id,
-            keyword_list=keyword_list,
-            match_type=match_type_opt or MatchType.EXACT,
-            bid=bid,
-            dry_run=dry_run,
-            force=force,
-        )
-        return
 
     # Find campaigns
     with console.status("[bold blue]Finding campaigns..."):
@@ -411,7 +284,7 @@ def add_keywords(
     console.print(f"\nKeywords: [cyan]{', '.join(keyword_list)}[/cyan]")
     console.print(f"Target: [cyan]{campaign_type.value.upper()}[/cyan] campaign")
     if bid:
-        console.print(f"Bid: [cyan]${bid}[/cyan]")
+        console.print(f"Bid: [cyan]{bid}[/cyan] (organization currency)")
 
     console.print("\n[bold]Routing Plan:[/bold]")
     console.print(f"  1. Add as EXACT to {target_campaign.get('name')}")
@@ -601,7 +474,7 @@ def promote_keywords(
         "-t",
         help="Target campaign type: brand, category, competitor",
     ),
-    bid: Optional[float] = typer.Option(None, "--bid", "-b", help="Bid amount (USD)"),
+    bid: Optional[float] = typer.Option(None, "--bid", "-b", help="Bid amount (organization currency)"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without changes"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
@@ -653,7 +526,7 @@ def promote_keywords(
 
     console.print(Panel(f"[bold]Promoting {len(keyword_list)} Keywords[/bold]", expand=False))
     console.print(f"\nKeywords: [cyan]{', '.join(keyword_list)}[/cyan]")
-    console.print(f"From: Discovery")
+    console.print("From: Discovery")
     console.print(f"To: [cyan]{target_type.value.upper()}[/cyan]")
 
     console.print("\n[bold]Actions:[/bold]")
@@ -803,7 +676,7 @@ def update_bid(
     campaign_id: Optional[int] = typer.Option(None, "--campaign", "-c", help="Campaign ID"),
     ad_group_id: Optional[int] = typer.Option(None, "--ad-group", "-g", help="Ad group ID"),
     keyword_id: Optional[int] = typer.Option(None, "--keyword", "-k", help="Keyword ID"),
-    bid: float = typer.Option(..., "--bid", "-b", help="New bid amount (USD)"),
+    bid: float = typer.Option(..., "--bid", "-b", help="New bid amount (organization currency)"),
 ):
     """Update bid amount for a keyword."""
     credentials = load_credentials()
@@ -844,7 +717,11 @@ def update_bid(
 
         for idx, kw in enumerate(keywords, 1):
             current_bid = kw.get("bidAmount", {})
-            bid_str = f"{current_bid.get('amount', '?')} {current_bid.get('currency', '')}" if current_bid else "-"
+            bid_str = (
+                f"{current_bid.get('amount', '?')} {current_bid.get('currency', '')}".strip()
+                if current_bid
+                else "-"
+            )
             table.add_row(str(idx), kw.get("text", ""), bid_str, kw.get("status", ""))
 
         console.print(table)
@@ -856,11 +733,12 @@ def update_bid(
                 break
             console.print("[red]Invalid selection.[/red]")
 
-    with console.status(f"[bold blue]Updating bid to ${bid}..."):
+    currency = client.get_org_currency()
+    with console.status(f"[bold blue]Updating bid to {bid} {currency}..."):
         result = client.update_keyword_bid(campaign_id, ad_group_id, keyword_id, bid)
 
     if result:
-        console.print(f"[green]Updated keyword {keyword_id} bid to ${bid}.[/green]")
+        console.print(f"[green]Updated keyword {keyword_id} bid to {bid} {currency}.[/green]")
     else:
         console.print(f"[red]Failed to update bid for keyword {keyword_id}.[/red]")
 
@@ -930,7 +808,7 @@ def pause_keyword_cmd(
 
         for idx, kw in enumerate(active_keywords, 1):
             current_bid = kw.get("bidAmount", {})
-            bid_str = f"{current_bid.get('amount', '?')} {current_bid.get('currency', '')}" if current_bid else "-"
+            bid_str = f"${current_bid.get('amount', '?')}" if current_bid else "-"
             table.add_row(str(idx), kw.get("text", ""), bid_str)
 
         console.print(table)
@@ -1014,7 +892,7 @@ def enable_keyword_cmd(
 
         for idx, kw in enumerate(paused_keywords, 1):
             current_bid = kw.get("bidAmount", {})
-            bid_str = f"{current_bid.get('amount', '?')} {current_bid.get('currency', '')}" if current_bid else "-"
+            bid_str = f"${current_bid.get('amount', '?')}" if current_bid else "-"
             table.add_row(str(idx), kw.get("text", ""), bid_str)
 
         console.print(table)
@@ -1031,3 +909,360 @@ def enable_keyword_cmd(
             console.print(f"[green]Keyword {keyword_id} enabled.[/green]")
         else:
             console.print(f"[red]Failed to enable keyword {keyword_id}.[/red]")
+
+
+@app.command()
+def research(
+    seed: Optional[str] = typer.Option(
+        None, "--seed", "-s",
+        help="Comma-separated seed keywords for recommendations"
+    ),
+    limit: int = typer.Option(
+        50, "--limit", "-l",
+        help="Max results to show"
+    ),
+    raw: bool = typer.Option(
+        False, "--raw",
+        help="Show raw API response for debugging"
+    ),
+):
+    """Research keywords — get Apple's recommendations and search popularity scores.
+
+    Uses ASA API targeting keyword recommendations endpoint to find new keywords
+    and get bid recommendations for existing ones.
+    """
+    config = get_current_app_config()
+    creds = load_credentials()
+    client = SearchAdsClient(credentials=creds, app_config=config)
+
+    app_name = _resolve_app_name()
+
+    # Find a campaign and ad group to use as context
+    with console.status("[bold blue]Finding campaigns..."):
+        campaigns = client.get_campaigns()
+
+    # Prefer Category campaign for recommendations
+    target_campaign = None
+    for c in campaigns:
+        ctype = detect_campaign_type(c.get("name", ""), app_name=app_name)
+        if ctype == CampaignType.CATEGORY:
+            target_campaign = c
+            break
+
+    if not target_campaign:
+        # Fall back to any campaign for this app
+        for c in campaigns:
+            ctype = detect_campaign_type(c.get("name", ""), app_name=app_name)
+            if ctype is not None:
+                target_campaign = c
+                break
+
+    if not target_campaign:
+        console.print("[red]No campaigns found for this app.[/red]")
+        return
+
+    campaign_id = target_campaign["id"]
+
+    # Get ad groups
+    with console.status("[bold blue]Finding ad groups..."):
+        ad_groups = client.get_ad_groups(campaign_id)
+
+    if not ad_groups:
+        console.print("[red]No ad groups found.[/red]")
+        return
+
+    ad_group_id = ad_groups[0]["id"]
+
+    with console.status("[bold blue]Fetching keyword recommendations from Apple..."):
+        recommendations = client.get_keyword_recommendations(
+            app_id=config.app_id,
+            campaign_id=campaign_id,
+            ad_group_id=ad_group_id,
+            keywords=[k.strip() for k in seed.split(",")] if seed else None,
+        )
+
+    if raw:
+        import json
+        console.print(json.dumps(recommendations, indent=2, default=str))
+        return
+
+    if not recommendations:
+        console.print("[yellow]No recommendations returned.[/yellow]")
+        return
+
+    table = Table(title=f"Keyword Recommendations for {config.app_name}")
+    table.add_column("Keyword", style="bold")
+    table.add_column("Bid Suggestion", justify="right")
+    table.add_column("Popularity", justify="center")
+
+    shown = 0
+    for item in recommendations[:limit]:
+        keyword = item.get("keyword") or item.get("text") or item.get("id", "?")
+        bid = item.get("bidAmount", {})
+        bid_str = f"${bid.get('amount', '-')}" if isinstance(bid, dict) else str(bid) if bid else "-"
+        popularity = item.get("searchPopularity", item.get("popularity", "-"))
+        table.add_row(str(keyword), bid_str, str(popularity))
+        shown += 1
+
+    console.print(table)
+    console.print(f"\n[dim]Showing {shown} of {len(recommendations)} results[/dim]")
+
+
+@app.command("list-negatives")
+def list_negatives(
+    campaign_id: Optional[int] = typer.Option(None, "--campaign", "-c", help="Campaign ID"),
+):
+    """List negative keywords for a campaign (campaign + ad-group level)."""
+    credentials = load_credentials()
+    if not credentials:
+        console.print("[red]No credentials configured. Run 'asa config setup' first.[/red]")
+        raise typer.Exit(1)
+
+    client = SearchAdsClient(credentials)
+
+    # Select campaign if not provided
+    if campaign_id is None:
+        campaign = select_campaign(client)
+        if not campaign:
+            return
+        campaign_id = campaign.get("id")
+
+    # Fetch campaign-level negatives
+    with console.status("[bold blue]Fetching campaign-level negative keywords..."):
+        campaign_negatives = client.get_negative_keywords(campaign_id)
+
+    # Fetch ad-group-level negatives
+    with console.status("[bold blue]Fetching ad groups..."):
+        ad_groups = client.get_ad_groups(campaign_id)
+
+    ag_negatives = []
+    for ag in ad_groups:
+        ag_id = ag.get("id")
+        ag_name = ag.get("name", "")
+        with console.status(f"[bold blue]Fetching negatives for {ag_name}..."):
+            negatives = client.get_ad_group_negative_keywords(campaign_id, ag_id)
+        for kw in negatives:
+            kw["_level"] = "Ad Group"
+            kw["_ad_group_name"] = ag_name
+        ag_negatives.extend(negatives)
+
+    # Tag campaign-level keywords
+    for kw in campaign_negatives:
+        kw["_level"] = "Campaign"
+        kw["_ad_group_name"] = "-"
+
+    all_negatives = campaign_negatives + ag_negatives
+
+    if not all_negatives:
+        console.print("[yellow]No negative keywords found.[/yellow]")
+        return
+
+    table = Table(title="Negative Keywords", show_header=True)
+    table.add_column("ID", style="cyan")
+    table.add_column("Keyword")
+    table.add_column("Match Type")
+    table.add_column("Status")
+    table.add_column("Level")
+    table.add_column("Ad Group")
+
+    for kw in all_negatives:
+        table.add_row(
+            str(kw.get("id")),
+            kw.get("text", ""),
+            kw.get("matchType", ""),
+            kw.get("status", ""),
+            kw.get("_level", ""),
+            kw.get("_ad_group_name", ""),
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Campaign-level: {len(campaign_negatives)} | Ad-group-level: {len(ag_negatives)} | Total: {len(all_negatives)}[/dim]")
+
+
+@app.command("delete-negatives")
+def delete_negatives(
+    ids: str = typer.Argument(..., help="Comma-separated negative keyword IDs to delete"),
+    campaign_id: Optional[int] = typer.Option(None, "--campaign", "-c", help="Campaign ID"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+):
+    """Delete negative keywords by comma-separated IDs."""
+    credentials = load_credentials()
+    if not credentials:
+        console.print("[red]No credentials configured. Run 'asa config setup' first.[/red]")
+        raise typer.Exit(1)
+
+    client = SearchAdsClient(credentials)
+
+    # Select campaign if not provided
+    if campaign_id is None:
+        campaign = select_campaign(client)
+        if not campaign:
+            return
+        campaign_id = campaign.get("id")
+
+    keyword_ids = [int(id_.strip()) for id_ in ids.split(",") if id_.strip().isdigit()]
+
+    if not keyword_ids:
+        console.print("[red]No valid keyword IDs provided.[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[bold red]Deleting {len(keyword_ids)} negative keyword(s):[/bold red]")
+    console.print(f"  IDs: {', '.join(str(i) for i in keyword_ids)}")
+
+    if not force and not Confirm.ask("\n[red]This is irreversible. Continue?[/red]"):
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+
+    with console.status("[bold blue]Deleting negative keywords..."):
+        success = client.delete_campaign_negative_keywords(campaign_id, keyword_ids)
+
+    if success:
+        console.print(f"[green]Deleted {len(keyword_ids)} negative keyword(s).[/green]")
+    else:
+        console.print("[red]Failed to delete some negative keywords.[/red]")
+
+
+@app.command("find")
+def find_keywords(
+    query: str = typer.Argument(..., help="Search text to match against keyword names"),
+    campaign_id: Optional[int] = typer.Option(None, "--campaign", "-c", help="Campaign ID"),
+):
+    """Search targeting keywords across a campaign."""
+    credentials = load_credentials()
+    if not credentials:
+        console.print("[red]No credentials configured. Run 'asa config setup' first.[/red]")
+        raise typer.Exit(1)
+
+    client = SearchAdsClient(credentials)
+
+    # Select campaign if not provided
+    if campaign_id is None:
+        campaign = select_campaign(client)
+        if not campaign:
+            return
+        campaign_id = campaign.get("id")
+
+    conditions = [
+        {
+            "field": "text",
+            "operator": "CONTAINS",
+            "values": [query.lower()],
+        }
+    ]
+
+    with console.status(f"[bold blue]Searching for '{query}'..."):
+        keywords = client.find_targeting_keywords(campaign_id, conditions=conditions)
+
+    if not keywords:
+        console.print(f"[yellow]No keywords matching '{query}' found.[/yellow]")
+        return
+
+    table = Table(title=f"Keywords matching '{query}'", show_header=True)
+    table.add_column("ID", style="cyan")
+    table.add_column("Keyword")
+    table.add_column("Match Type")
+    table.add_column("Bid")
+    table.add_column("Status")
+    table.add_column("Ad Group ID")
+
+    for kw in keywords:
+        bid = kw.get("bidAmount", {})
+        bid_str = f"${bid.get('amount', '?')}" if bid else "-"
+        table.add_row(
+            str(kw.get("id")),
+            kw.get("text", ""),
+            kw.get("matchType", ""),
+            bid_str,
+            kw.get("status", ""),
+            str(kw.get("adGroupId", "")),
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Total: {len(keywords)} keywords[/dim]")
+
+
+@app.command("update-bids-bulk")
+def update_bids_bulk(
+    bid: float = typer.Option(..., "--bid", "-b", help="New bid amount (organization currency) for all keywords"),
+    campaign_id: Optional[int] = typer.Option(None, "--campaign", "-c", help="Campaign ID"),
+    ad_group_id: Optional[int] = typer.Option(None, "--ad-group", "-g", help="Ad group ID"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+):
+    """Update all keyword bids in a campaign/ad group at once."""
+    credentials = load_credentials()
+    if not credentials:
+        console.print("[red]No credentials configured. Run 'asa config setup' first.[/red]")
+        raise typer.Exit(1)
+
+    client = SearchAdsClient(credentials)
+
+    # Select campaign if not provided
+    if campaign_id is None:
+        campaign = select_campaign(client)
+        if not campaign:
+            return
+        campaign_id = campaign.get("id")
+
+    # Select ad group if not provided
+    if ad_group_id is None:
+        ad_group = select_ad_group(client, campaign_id)
+        if not ad_group:
+            return
+        ad_group_id = ad_group.get("id")
+
+    # Get all keywords
+    with console.status("[bold blue]Fetching keywords..."):
+        keywords = client.get_keywords(campaign_id, ad_group_id)
+
+    if not keywords:
+        console.print("[yellow]No keywords found.[/yellow]")
+        return
+
+    currency = client.get_org_currency()
+
+    # Show current bids
+    table = Table(title="Current Bids", show_header=True)
+    table.add_column("ID", style="cyan")
+    table.add_column("Keyword")
+    table.add_column("Current Bid")
+    table.add_column("New Bid")
+    table.add_column("Status")
+
+    for kw in keywords:
+        current_bid = kw.get("bidAmount", {})
+        current_str = (
+            f"{current_bid.get('amount', '?')} {current_bid.get('currency', '')}".strip()
+            if current_bid
+            else "-"
+        )
+        table.add_row(
+            str(kw.get("id")),
+            kw.get("text", ""),
+            current_str,
+            f"{bid:.2f} {currency}",
+            kw.get("status", ""),
+        )
+
+    console.print(table)
+    console.print(f"\n[bold]Updating {len(keywords)} keyword(s) to {bid:.2f} {currency}[/bold]")
+
+    if not force and not Confirm.ask("\nProceed?"):
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+
+    # Build bulk update payload
+    updates = [
+        {"id": kw.get("id"), "bidAmount": {"amount": str(bid), "currency": currency}}
+        for kw in keywords
+    ]
+
+    with console.status("[bold blue]Updating bids..."):
+        result = client.update_keywords_bulk(campaign_id, ad_group_id, updates)
+
+    if result is not None:
+        console.print(
+            f"\n[bold green]Updated {len(keywords)} keyword bids to "
+            f"{bid:.2f} {currency}.[/bold green]"
+        )
+    else:
+        console.print("[red]Failed to update keyword bids.[/red]")
