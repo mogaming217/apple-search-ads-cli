@@ -445,6 +445,7 @@ Create a new campaign with custom settings.
 | option | `--budget`, `-b` | no | `float` | `50.0` | — | Daily budget (organization currency) |
 | option | `--countries`, `-c` | no | `text` | `US` | — | Comma-separated country codes |
 | option | `--status`, `-s` | no | `text` | `ENABLED` | — | Initial status (ENABLED or PAUSED) |
+| option | `--budget-order-id`, `-g` | no | `integer` | — | — | Budget Order / Campaign Group ID (required for accounts upgraded from Basic / LOC billing) |
 | option | `--help` | no | `boolean` | `False` | — | Show this message and exit. |
 
 ## `asa v5 campaigns delete`
@@ -674,12 +675,13 @@ Show geo targeting for all campaigns.
 
 ## `asa v5 keywords add`
 
-Add keywords to a campaign with automatic routing.
+Add keywords to a campaign.
 
-Keywords are added to:
-- The appropriate exact match campaign (brand/category/competitor)
-- Discovery campaign (broad match) for mining
-- Discovery campaign negative keywords (to prevent overlap)
+Two modes:
+- Routing mode (default): pass --type brand|category|competitor; keywords are
+  added as EXACT to the matching campaign and as BROAD + NEGATIVE to Discovery.
+- Direct mode: pass --campaign <ID> --ad-group <ID> [--match exact|broad] to
+  add keywords straight into a specific ad group with no Discovery routing.
 
 - Usage: `Usage: asa v5 keywords add [OPTIONS] KEYWORDS`
 
@@ -688,7 +690,10 @@ Keywords are added to:
 | Kind | Name or flags | Required | Type | Default | Environment | Help |
 |---|---|---|---|---|---|---|
 | argument | `KEYWORDS` | yes | `text` | — | — |  |
-| option | `--type`, `-t` | no | `choice` | `CampaignType.CATEGORY` | — | Campaign type: brand, category, competitor |
+| option | `--type`, `-t` | no | `choice` | — | — | Campaign type: brand, category, competitor (default: category in routing mode; ignored in direct mode) |
+| option | `--campaign`, `-c` | no | `integer` | — | — | Direct mode: campaign ID to add keywords to (requires --ad-group) |
+| option | `--ad-group`, `-g` | no | `integer` | — | — | Direct mode: ad group ID to add keywords to (requires --campaign) |
+| option | `--match`, `-m` | no | `choice` | — | — | Direct mode: match type (exact or broad). Default: exact |
 | option | `--bid`, `-b` | no | `float` | — | — | Bid amount (organization currency) |
 | option | `--dry-run`, `-n` | no | `boolean` | `False` | — | Preview without adding |
 | option | `--force`, `-f` | no | `boolean` | `False` | — | Skip confirmation prompt |
