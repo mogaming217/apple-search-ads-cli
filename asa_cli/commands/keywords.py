@@ -220,27 +220,139 @@ def list_keywords(
         console.print(f"\n[dim]Total matching: {total_count} keywords[/dim]")
 
 
+def _add_keywords_direct(
+    client: SearchAdsClient,
+    campaign_id: int,
+    ad_group_id: int,
+    keyword_list: list[str],
+    match_type: MatchType,
+    bid: Optional[float],
+    dry_run: bool,
+    force: bool,
+) -> None:
+    """Add keywords directly to a specific ad group, bypassing type-based routing."""
+    with console.status("[bold blue]Resolving campaign and ad group..."):
+        campaign = client.get_campaign(campaign_id)
+        if not campaign:
+            console.print(f"[red]Campaign {campaign_id} not found.[/red]")
+            raise typer.Exit(1)
+
+        ad_groups = client.get_ad_groups(campaign_id)
+
+    ad_group = next((ag for ag in ad_groups if ag.get("id") == ad_group_id), None)
+    if not ad_group:
+        console.print(
+            f"[red]Ad group {ad_group_id} not found in campaign {campaign_id}.[/red]"
+        )
+        raise typer.Exit(1)
+
+    console.print(Panel(f"[bold]Adding {len(keyword_list)} Keywords (direct)[/bold]", expand=False))
+    console.print(f"\nKeywords: [cyan]{', '.join(keyword_list)}[/cyan]")
+    console.print(f"Campaign: [cyan]{campaign.get('name')} ({campaign_id})[/cyan]")
+    console.print(f"Ad Group: [cyan]{ad_group.get('name')} ({ad_group_id})[/cyan]")
+    console.print(f"Match Type: [cyan]{match_type.value}[/cyan]")
+    if bid is not None:
+        console.print(f"Bid: [cyan]{bid}[/cyan] (org currency)")
+    else:
+        console.print("Bid: [cyan]ad group default[/cyan]")
+
+    console.print("\n[dim]Direct mode: no Discovery broad/negative routing.[/dim]")
+
+    if dry_run:
+        console.print("\n[yellow]Dry run - no changes made.[/yellow]")
+        return
+
+    if not force and not Confirm.ask("\nProceed?"):
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+
+    with console.status("[bold blue]Adding keywords..."):
+        added, errors = client.add_keywords(
+            campaign_id=campaign_id,
+            ad_group_id=ad_group_id,
+            keywords=keyword_list,
+            match_type=match_type,
+            bid_amount=bid,
+        )
+
+    if added:
+        console.print(f"[green]Added {len(added)} keywords to ad group {ad_group_id}[/green]")
+        for kw in added:
+            console.print(
+                f"  [dim]- {kw.get('text')} ({kw.get('matchType')}) id={kw.get('id')}[/dim]"
+            )
+    if errors:
+        all_duplicates = all(e.get("messageCode") == "DUPLICATE_KEYWORD" for e in errors)
+        if all_duplicates and not added:
+            console.print("[dim]All keywords already exist in this ad group.[/dim]")
+        elif all_duplicates:
+            console.print("[dim]Some keywords already existed and were skipped.[/dim]")
+        else:
+            for err in errors:
+                console.print(f"[red]Error: {err.get('message', 'Unknown error')}[/red]")
+    if not added and not errors:
+        console.print("[red]Failed to add keywords (no response data).[/red]")
+
+
 @app.command("add")
 def add_keywords(
     keywords: str = typer.Argument(..., help="Comma-separated keywords to add"),
-    campaign_type: CampaignType = typer.Option(
-        CampaignType.CATEGORY,
+    campaign_type: Optional[CampaignType] = typer.Option(
+        None,
         "--type",
         "-t",
-        help="Campaign type: brand, category, competitor",
+        help="Campaign type: brand, category, competitor (default: category in routing mode; ignored in direct mode)",
+    ),
+    campaign_id: Optional[int] = typer.Option(
+        None,
+        "--campaign",
+        "-c",
+        help="Direct mode: campaign ID to add keywords to (requires --ad-group)",
+    ),
+    ad_group_id: Optional[int] = typer.Option(
+        None,
+        "--ad-group",
+        "-g",
+        help="Direct mode: ad group ID to add keywords to (requires --campaign)",
+    ),
+    match_type_opt: Optional[MatchType] = typer.Option(
+        None,
+        "--match",
+        "-m",
+        case_sensitive=False,
+        help="Direct mode: match type (exact or broad). Default: exact",
     ),
     bid: Optional[float] = typer.Option(None, "--bid", "-b", help="Bid amount (organization currency)"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without adding"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
-    """Add keywords to a campaign with automatic routing.
+    """Add keywords to a campaign.
 
-    Keywords are added to:
-    - The appropriate exact match campaign (brand/category/competitor)
-    - Discovery campaign (broad match) for mining
-    - Discovery campaign negative keywords (to prevent overlap)
+    Two modes:
+    - Routing mode (default): pass --type brand|category|competitor; keywords are
+      added as EXACT to the matching campaign and as BROAD + NEGATIVE to Discovery.
+    - Direct mode: pass --campaign <ID> --ad-group <ID> [--match exact|broad] to
+      add keywords straight into a specific ad group with no Discovery routing.
     """
-    if campaign_type == CampaignType.DISCOVERY:
+    direct_mode = ad_group_id is not None or campaign_id is not None
+    if direct_mode and (campaign_id is None or ad_group_id is None):
+        console.print("[red]Direct mode requires both --campaign and --ad-group.[/red]")
+        raise typer.Exit(1)
+
+    if direct_mode and campaign_type is not None:
+        console.print(
+            "[yellow]--type is ignored when --campaign / --ad-group are specified.[/yellow]"
+        )
+
+    if not direct_mode and match_type_opt is not None:
+        console.print(
+            "[yellow]--match is only used in direct mode (with --campaign / --ad-group). Ignored.[/yellow]"
+        )
+
+    if not direct_mode and campaign_type is None:
+        campaign_type = CampaignType.CATEGORY
+
+    if not direct_mode and campaign_type == CampaignType.DISCOVERY:
         console.print("[red]Cannot add keywords directly to Discovery. Use brand/category/competitor.[/red]")
         raise typer.Exit(1)
 
@@ -258,6 +370,19 @@ def add_keywords(
     if not keyword_list:
         console.print("[red]No valid keywords provided.[/red]")
         raise typer.Exit(1)
+
+    if direct_mode:
+        _add_keywords_direct(
+            client=client,
+            campaign_id=campaign_id,
+            ad_group_id=ad_group_id,
+            keyword_list=keyword_list,
+            match_type=match_type_opt or MatchType.EXACT,
+            bid=bid,
+            dry_run=dry_run,
+            force=force,
+        )
+        return
 
     # Find campaigns
     with console.status("[bold blue]Finding campaigns..."):
