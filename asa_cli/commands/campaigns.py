@@ -243,9 +243,10 @@ def setup_campaigns(
             continue
 
         with console.status(f"[bold blue]Creating {ctype.value} campaign..."):
+            # Lifetime budget (budgetAmount) is no longer accepted by Apple
+            # (LIFETIME_BUDGET_NOT_SUPPORTED), so send only the daily budget.
             campaign = client.create_campaign(
                 name=campaign_name,
-                budget=budget * 30,  # Monthly budget
                 daily_budget=budget,
                 countries=country_list,
             )
@@ -499,9 +500,10 @@ def create_campaign(
         console.print(f"  Budget Order ID: [cyan]{budget_order_id}[/cyan]")
 
     with console.status("[bold blue]Creating campaign..."):
+        # Lifetime budget (budgetAmount) is no longer accepted by Apple
+        # (LIFETIME_BUDGET_NOT_SUPPORTED), so send only the daily budget.
         campaign = client.create_campaign(
             name=name,
-            budget=budget * 30,  # Monthly budget estimate
             daily_budget=budget,
             countries=country_list,
             status=status_upper,

@@ -10,6 +10,11 @@
 
 ## 現在のピン
 
+- タグ: `pinned-2026-10-15-create-no-lifetime`
+- 内容: 下記 kw-research ピンに「`asa v5 campaigns create` / `setup` が総予算（lifetime budget）を送らない」修正を追加（詳細は「Fork 独自パッチ」末尾）
+
+### 過去のピン: pinned-2026-08-17-kw-research
+
 - タグ: `pinned-2026-08-17-kw-research`
 - 内容: 下記 platform-v1 ピンに `asa workflows keywords`（pop / genres / sugg、キーワードリサーチ）を追加
 - 追加は fork 独自機能（workflows 配下、read-only、in-process で Platform API v1 を呼ぶ）。詳細は `asa workflows keywords --help`
@@ -24,7 +29,7 @@
 ### インストール
 
 ```bash
-uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-search-ads-cli.git@pinned-2026-08-17-kw-research"
+uv tool install --force --no-cache "git+https://github.com/mogaming217/apple-search-ads-cli.git@pinned-2026-10-15-create-no-lifetime"
 ```
 
 > `--no-cache` 必須。uv のビルドキャッシュが効くと古い版が入ったままになる現象を確認（2026-04-22）。
@@ -201,3 +206,11 @@ upstream にも有用な機能なので、安定後に upstream PR 検討候補�
 - Apple Ads ダッシュボードで **read-only 権限の API ユーザー**を別途作り、普段はそちらで運用する
 - write 権限が必要な操作（キャンペーン作成・入札変更等）をする時だけ write キーに切り替える
 - `~/.asa-cli/` は macOS の FileVault 配下であることを前提とする
+
+### `campaigns create` / `setup` の総予算送信を停止（2026-10-15）
+
+`asa v5 campaigns create` と `setup` は日予算 × 30 を `budgetAmount`（lifetime budget）として常に送っていたが、Apple が lifetime budget を廃止したため、新規キャンペーン作成が `LIFETIME_BUDGET_NOT_SUPPORTED`（400）で全件失敗していた（2026-10-15、レピッタ TW キャンペーン作成時に発覚）。
+
+- `asa_cli/commands/campaigns.py`: `create` / `setup` の `client.create_campaign(...)` 呼び出しから `budget=budget * 30` を削除し、`daily_budget` のみ送る。`SearchAdsClient.create_campaign` 自体は変更なし（`budget` 引数は残るが CLI からは渡さない）
+- `tests/test_v5_command_contracts.py`: `create` が `daily_budget` のみで呼び出し、`budget` を渡さないことを固定するテストを追加
+

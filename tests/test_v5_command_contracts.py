@@ -172,3 +172,29 @@ def test_keyword_promotion_dry_run_does_not_mutate():
     assert "Add as EXACT to Category" in result.output
     assert "Add as NEGATIVE to Discovery" in result.output
     assert_no_keyword_mutations(client)
+
+
+def test_campaign_create_sends_daily_budget_without_lifetime_budget():
+    # Apple rejects budgetAmount with LIFETIME_BUDGET_NOT_SUPPORTED, so the
+    # create command must not derive a lifetime budget from the daily budget.
+    client = MagicMock()
+    client.get_org_currency.return_value = "JPY"
+    client.create_campaign.return_value = {"id": 99, "name": "TW-キーワード"}
+    app_config = AppConfig(app_id=1494651925, app_name="Repitta")
+
+    with (
+        patch.object(campaigns, "load_credentials", return_value=object()),
+        patch.object(campaigns, "get_current_app_config", return_value=app_config),
+        patch.object(campaigns, "SearchAdsClient", return_value=client),
+    ):
+        result = runner.invoke(
+            campaigns.app,
+            ["create", "TW-キーワード", "--budget", "1000", "--countries", "TW"],
+        )
+
+    assert result.exit_code == 0, result.output
+    client.create_campaign.assert_called_once()
+    kwargs = client.create_campaign.call_args.kwargs
+    assert kwargs["daily_budget"] == 1000
+    assert kwargs["countries"] == ["TW"]
+    assert "budget" not in kwargs
